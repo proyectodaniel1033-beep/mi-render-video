@@ -1,15 +1,9 @@
-import os
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-
-app = FastAPI()
-
-@app.get("/download/{identificacion}")
-async def download_video(identificacion: str):
-    # Asegúrate de que esta sea la ruta donde FFmpeg guarda los videos renderizados
-    file_path = f"videos/{identificacion}.mp4"  # O la ruta absoluta/relativa que uses
+@app.get("/status/{identificacion}")
+async def check_status(identificacion: str):
+    # Cambia esto por la ruta real donde guardas o procesas los videos
+    file_path = f"videos/{identificacion}.mp4"
     
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"No se encontró el archivo para el ID: {identificacion}")
-        
-    return FileResponse(file_path, media_type="video/mp4", filename="video.mp4")
+    if os.path.exists(file_path):
+        return {"estado": "completado"}
+    else:
+        return {"estado": "pendiente"}
