@@ -1,11 +1,5 @@
-from fastapi.responses import FileResponse
-import os
-
-@app.get("/download/{job_id}")
-def download_video(job_id: str):
-    video_path = f"/app/videos/{job_id}.mp4"
-    
-    if os.path.exists(video_path):
-        return FileResponse(video_path, media_type="video/mp4", filename="video.mp4")
-    else:
-        return FileResponse(video_path, media_type="video/mp4", filename="video.mp4")
+@app.get("/download/{identificacion}")
+async def download_video(identificacion: str):
+    # Tu lógica de FFmpeg para buscar el archivo generado con esa identificación
+    file_path = f"/ruta/a/tu/video_{identificacion}.mp4"
+    return FileResponse(file_path, media_type="video/mp4", filename="video.mp4")
