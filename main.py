@@ -1,3 +1,6 @@
 @app.get("/status/{job_id}")
-def ver_estado(job_id: str):
-    # Aquí buscas el ID en tu lista
+async def get_status(job_id: str):
+    return {
+        "id": job_id,
+        "estado": "completado"
+    }
