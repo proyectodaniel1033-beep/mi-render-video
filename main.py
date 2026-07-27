@@ -56,11 +56,3 @@ def obtener_estado(task_id: str):
   # Si el ID no existe en memoria, por seguridad respondemos pendiente o error
   estado_actual = estados_tareas.get(task_id, "pendiente")
   return {"estado": estado_actual}
-
-FROM python:3.10-slim
-RUN apt-get update && apt-get install -y ffmpeg
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
