@@ -1,10 +1,5 @@
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.get("/status/{job_id}")
-async def get_status(job_id: str):
-    return {
-        "id": job_id,
-        "estado": "completado"
-    }
+return {
+    "identificación": job_id,
+    "estado": "completado",
+    "url": f"https://tu-app.onrender.com/download/{job_id}"
+}
