@@ -28,11 +28,10 @@ async def iniciar_renderizado(identificacion: str, background_tasks: BackgroundT
 async def check_status(identificacion: str):
     file_path = f"{identificacion}.mp4"
 
-   if os.path.exists(file_path):
+    if os.path.exists(file_path):
         return {
             "estado": "completado",
             "url": f"https://proyectodaniel1033.onrender.com/{file_path}"
         }
     else:
         return {"estado": "pendiente"}
-
