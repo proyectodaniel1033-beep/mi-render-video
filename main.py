@@ -8,4 +8,4 @@ def download_video(job_id: str):
     if os.path.exists(video_path):
         return FileResponse(video_path, media_type="video/mp4", filename="video.mp4")
     else:
-        return {"error": "El video aún no está listo o no existe"}
+        return FileResponse(video_path, media_type="video/mp4", filename="video.mp4")
