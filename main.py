@@ -31,7 +31,7 @@ async def check_status(identificacion: str):
     if os.path.exists(file_path):
         return {
             "estado": "completado",
-            "url": f"https://proyectodaniel1033.onrender.com/{file_path}"
+            "url": f"https://mi-render-video.onrender.com/{file_path}"
         }
     else:
         return {"estado": "pendiente"}
