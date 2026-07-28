@@ -16,7 +16,7 @@ class VideoRequest(BaseModel):
 def proceso_ffmpeg_real(task_id: str, imagen_url: str, audio_url: str):
     ruta_imagen = f"temp_img_{task_id}.jpg"
     ruta_audio = f"temp_audio_{task_id}.mp3"
-    ruta_archivo = f"video_procesado_{task_id}.mp4"
+    ruta_archivo = f"video_{str(task_id)}.mp4"
     duracion_segundos = "30"  # O el tiempo exacto que prefieras
     
     try:
