@@ -20,7 +20,7 @@ def crear_trabajo(background_tasks: BackgroundTasks):
 def obtener_estado(task_id: str):
     if task_id not in estados_tareas:
         raise HTTPException(status_code=404, detail="Trabajo no encontrado")
-    return {"id": task_id, "estado": estados_tareas[task_id]}
+    return {"id": task_id, "status": estados_tareas[task_id]}
 
 @app.get("/download/{task_id}")
 def descargar_video(task_id: str):
