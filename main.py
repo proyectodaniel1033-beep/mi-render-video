@@ -8,21 +8,33 @@ app = FastAPI()
 # Diccionario en memoria para almacenar el estado de las tareas
 estados_tareas = {}
 
+import subprocess
+
 def proceso_ffmpeg_real(task_id: str):
     ruta_archivo = f"video_procesado_{task_id}.mp4"
-    
-    with open(ruta_archivo, "wb") as f:
-        f.write(b"video simulado")
-        
-    estados_tareas[task_id] = "completed"
+    comando = [
+        "ffmpeg",
+        "-f", "lavfi",
+        "-i", "color=c=black:s=1280x720:r=30",
+        "-f", "lavfi",
+        "-i", "anullsrc=r=44100:cl=stereo",
+        "-t", "3",
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-pix_fmt", "yuv420p",
+        ruta_archivo
+    ]
+    try:
+        subprocess.run(comando, check=True)
+        estados_tareas[task_id] = "completed"
+    except Exception as e:
+        estados_tareas[task_id] = "error"
+
 @app.post("/transcode")
 def crear_trabajo(background_tasks: BackgroundTasks):
     task_id = str(uuid.uuid4())
     estados_tareas[task_id] = "pending"
-    
-    # Activa la tarea en segundo plano para procesar el video y actualizar el estado
     background_tasks.add_task(proceso_ffmpeg_real, task_id)
-    
     return {"id": task_id, "status": "pending"}
 
 @app.get("/status/{task_id}")
