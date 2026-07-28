@@ -14,14 +14,15 @@ def proceso_ffmpeg_real(task_id: str):
     ruta_archivo = f"video_procesado_{task_id}.mp4"
     comando = [
         "ffmpeg",
-        "-f", "lavfi",
-        "-i", "color=c=black:s=1280x720:r=30",
-        "-f", "lavfi",
-        "-i", "anullsrc=r=44100:cl=stereo",
-        "-t", "120",
+        "-loop", "1",
+        "-i", "imagen_fondo.jpg",  # Tu imagen de fondo
+        "-i", "audio_voz.mp3",       # Tu archivo de audio o voz generada
         "-c:v", "libx264",
+        "-tune", "stillimage",
         "-c:a", "aac",
+        "-b:a", "192k",
         "-pix_fmt", "yuv420p",
+        "-shortest",                 # Termina el video cuando acabe el audio
         ruta_archivo
     ]
     try:
