@@ -40,3 +40,18 @@ def obtener_estado(task_id: str):
     if task_id not in estados_tareas:
         raise HTTPException(status_code=404, detail="Trabajo no encontrado")
     return {"id": task_id, "estado": estados_tareas[task_id]}
+from fastapi.responses import FileResponse
+import os
+
+@app.get("/download/{task_id}")
+def descargar_video(task_id: str):
+    if task_id not in estados_tareas:
+        raise HTTPException(status_code=404, detail="Trabajo no encontrado")
+    
+    # Asegúrate de que esta sea la ruta donde guardas tu archivo de video procesado
+    ruta_archivo = f"video_procesado_{task_id}.mp4" 
+    
+    if not os.path.exists(ruta_archivo):
+        raise HTTPException(status_code=404, detail="Archivo de video no encontrado en el servidor")
+        
+    return FileResponse(ruta_archivo, media_type="video/mp4", filename="video_final.mp4")
