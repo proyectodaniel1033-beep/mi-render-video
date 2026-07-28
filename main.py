@@ -36,8 +36,8 @@ def procesar_video(task_id: str, image_url: str, audio_url: str):
         comando = [
             "ffmpeg",
             "-loop", "1",
-            "-i", ruta_imagen,
-            "-i", ruta_audio,
+            "-i", imagen_url,
+            "-i", audio_url,
             "-t", "120",
             "-c:v", "libx264",
             "-tune", "stillimage",
@@ -66,7 +66,7 @@ def iniciar_transcode(datos: TranscodeRequest, background_tasks: BackgroundTasks
     estados_tareas[task_id] = "pending"
     
     # Ejecutar en segundo plano para que Render no corte la petición HTTP
-    background_tasks.add_task(procesar_video, task_id, datos.image_url, datos.audio_url)
+    background_tasks.add_task(procesar_video, task_id, datos.imagen_url, datos.audio_url)
     
     return {"id": task_id, "estado": "pending"}
 
