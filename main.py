@@ -36,7 +36,7 @@ def proceso_ffmpeg_real(task_id: str, imagen_url: str, audio_url: str):
             "-loop", "1",
             "-i", ruta_imagen,
             "-i", ruta_audio,
-            "-t", duracion_segundos,
+            "-t", 120,
             "-c:v", "libx264",
             "-tune", "stillimage",
             "-c:a", "aac",
