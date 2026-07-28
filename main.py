@@ -11,7 +11,7 @@ app = FastAPI()
 estados_tareas = {}
 
 class TranscodeRequest(BaseModel):
-    image_url: str
+    imagen_url: str
     audio_url: str
 
 def procesar_video(task_id: str, image_url: str, audio_url: str):
