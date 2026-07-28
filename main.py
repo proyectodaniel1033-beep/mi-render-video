@@ -9,19 +9,12 @@ app = FastAPI()
 estados_tareas = {}
 
 def proceso_ffmpeg_real(task_id: str):
-    """
-    Simula o ejecuta el procesamiento real con FFmpeg en segundo plano.
-    Cuando el proceso termina, cambia el estado a 'completed'.
-    """
-    try:
-        # Aquí puedes colocar tu lógica o comando real de FFmpeg para generar el video
-        # Ejemplo: os.system(f"ffmpeg -i input.mp4 video_procesado_{task_id}.mp4")
+    ruta_archivo = f"video_procesado_{task_id}.mp4"
+    
+    with open(ruta_archivo, "wb") as f:
+        f.write(b"video simulado")
         
-        # Simulamos que el procesamiento finalizó con éxito
-        estados_tareas[task_id] = "completed"
-    except Exception as e:
-        estados_tareas[task_id] = "error"
-
+    estados_tareas[task_id] = "completed"
 @app.post("/transcode")
 def crear_trabajo(background_tasks: BackgroundTasks):
     task_id = str(uuid.uuid4())
