@@ -16,7 +16,8 @@ def proceso_ffmpeg_real(task_id: str):
         "ffmpeg",
         "-loop", "1",
         "-i", "imagen_fondo.jpg",  # Tu imagen de fondo
-        "-i", "audio_voz.mp3",       # Tu archivo de audio o voz generada
+        "-i", "audio_voz.mp3",    # Tu archivo de audio o voz generada
+        "-t", "120",
         "-c:v", "libx264",
         "-tune", "stillimage",
         "-c:a", "aac",
