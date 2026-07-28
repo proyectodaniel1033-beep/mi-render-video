@@ -13,7 +13,6 @@ import subprocess
 def proceso_ffmpeg_real(task_id: str):
     ruta_archivo = f"video_procesado_{task_id}.mp4"
     comando = [
-        comando = [
         "ffmpeg",
         "-f", "lavfi",
         "-i", "color=c=black:s=1280x720:r=30",
