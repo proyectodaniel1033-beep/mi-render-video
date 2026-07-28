@@ -65,6 +65,11 @@ def iniciar_transcode(datos: TranscodeRequest, background_tasks: BackgroundTasks
     task_id = str(uuid.uuid4())
     estados_tareas[task_id] = "pending"
     
+    # Aquí FastAPI recibe automáticamente las URLs dinámicas que manda n8n
+    background_tasks.add_task(procesar_video, task_id, datos.imagen_url, datos.audio_url)
+    
+    return {"id": task_id, "estado": "pending"}
+    
     # Ejecutar en segundo plano para que Render no corte la petición HTTP
     background_tasks.add_task(procesar_video, task_id, datos.imagen_url, datos.audio_url)
     
