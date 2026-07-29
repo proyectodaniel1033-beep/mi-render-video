@@ -16,32 +16,40 @@ class TranscodeRequest(BaseModel):
 
 def procesar_video(task_id: str, video_url: str, audio_url: str):
     try:
+        estados_tareas[task_id] = "processing"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 
-# 1. Descargar el video de entrada automáticamente
-r_video = requests.get(video_url, headers=headers, stream=True)
-with open(ruta_video_entrada, "wb") as f:
-    for chunk in r_video.iter_content(chunk_size=8192):
-        f.write(chunk)
+        ruta_video_entrada = f"input_video_{task_id}.mp4"
+        ruta_audio_entrada = f"input_audio_{task_id}.mp3"
+        ruta_salida = f"output_video_{task_id}.mp4"
 
-# 2. Descargar el audio de entrada automáticamente
-r_audio = requests.get(audio_url, headers=headers, stream=True)
-with open(ruta_audio_entrada, "wb") as f:
-    for chunk in r_audio.iter_content(chunk_size=8192):
-        f.write(chunk)
+        # 1. Descargar video
+        r_video = requests.get(video_url, headers=headers, stream=True)
+        with open(ruta_video_entrada, "wb") as f:
+            for chunk in r_video.iter_content(chunk_size=8192):
+                f.write(chunk)
 
-        # 3. Comando FFmpeg para combinar el video y el audio automatizados
+        # 2. Descargar audio
+        r_audio = requests.get(audio_url, headers=headers, stream=True)
+        with open(ruta_audio_entrada, "wb") as f:
+            for chunk in r_audio.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        # 3. Comando FFmpeg para combinar
         comando = [
             "ffmpeg",
             "-i", ruta_video_entrada,
             "-i", ruta_audio_entrada,
-            "-c:v", "copy",       # Copia el video sin recodificar para mayor velocidad
-            "-c:a", "aac",        # Codifica el audio en AAC estándar
-            "-shortest",          # Corta cuando el archivo más corto termine
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-shortest",
             ruta_salida
         ]
-
+        
+        # Ejecutar FFmpeg
         subprocess.run(comando, check=True)
+        
+        # Si todo sale bien, cambia a completed
         estados_tareas[task_id] = "completed"
 
     except Exception as e:
