@@ -16,21 +16,19 @@ class TranscodeRequest(BaseModel):
 
 def procesar_video(task_id: str, video_url: str, audio_url: str):
     try:
-        estados_tareas[task_id] = "processing"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 
-        ruta_video_entrada = f"input_video_{task_id}.mp4"
-        ruta_audio_entrada = f"input_audio_{task_id}.mp3"
-        ruta_salida = f"output_video_{task_id}.mp4"
+# 1. Descargar el video de entrada automáticamente
+r_video = requests.get(video_url, headers=headers, stream=True)
+with open(ruta_video_entrada, "wb") as f:
+    for chunk in r_video.iter_content(chunk_size=8192):
+        f.write(chunk)
 
-        # 1. Descargar el video de entrada automáticamente
-        video_data = requests.get(video_url).content
-        with open(ruta_video_entrada, "wb") as f:
-            f.write(video_data)
-
-        # 2. Descargar el audio de entrada automáticamente
-        audio_data = requests.get(audio_url).content
-        with open(ruta_audio_entrada, "wb") as f:
-            f.write(audio_data)
+# 2. Descargar el audio de entrada automáticamente
+r_audio = requests.get(audio_url, headers=headers, stream=True)
+with open(ruta_audio_entrada, "wb") as f:
+    for chunk in r_audio.iter_content(chunk_size=8192):
+        f.write(chunk)
 
         # 3. Comando FFmpeg para combinar el video y el audio automatizados
         comando = [
