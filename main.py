@@ -64,9 +64,9 @@ def iniciar_transcode(datos: TranscodeRequest, background_tasks: BackgroundTasks
     # Ejecutar en segundo plano para que Render no corte la petición HTTP
     background_tasks.add_task(procesar_video, task_id, datos.video_url, datos.audio_url)
 
-    return {"id": task_id, "estado": "pending"}
+    return {"id": task_id, "status": "pending"}
 
 @app.get("/status/{task_id}")
 def verificar_estado(task_id: str):
     estado = estados_tareas.get(task_id, "not_found")
-    return {"id": task_id, "estado": estado}
+    return {"id": task_id, "status": estado}
