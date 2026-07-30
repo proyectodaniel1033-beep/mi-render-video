@@ -11,8 +11,9 @@ app = FastAPI()
 estados_tareas = {}
 
 class TranscodeRequest(BaseModel):
-    id: str
-    callbackUrl: str
+    video_url: str
+    audio_url: str
+    webhook_url: str
     
 def procesar_video(task_id: str, datos: TranscodeRequest):
     ruta_video_entrada = f"input_video_{task_id}.mp4"
@@ -64,10 +65,27 @@ def procesar_video(task_id: str, datos: TranscodeRequest):
                 except Exception:
                     pass
 
+from fastapi import Request, HTTPException
+
 @app.post("/transcode")
-def iniciar_transcode(datos: TranscodeRequest, background_tasks: BackgroundTasks):
-    task_id = str(uuid.uuid4())
-    estados_tareas[task_id] = "pending"
+async def iniciar_transcodificacion(request: Request):
+    try:
+        data = await request.json()
+        print("LO QUE LLEGÓ DESDE N8N:", data)
+        
+        # Validamos manualmente para ver qué falta
+        video_url = data.get("video_url")
+        audio_url = data.get("audio_url")
+        webhook_url = data.get("webhook_url")
+        
+        if not video_url or not audio_url or not webhook_url:
+            print(f"Faltan datos. Llegó -> video: {video_url}, audio: {audio_url}, webhook: {webhook_url}")
+            raise HTTPException(status_code=422, detail="Faltan campos obligatorios")
+            
+        return {"estado": "ok"}
+    except Exception as e:
+        print("Error:", str(e))
+        raise HTTPException(status_code=422, detail=str(e))
 
     # Ejecutar en segundo plano para que Render no corte la petición HTTP
     background_tasks.add_task(procesar_video, task_id, datos)
