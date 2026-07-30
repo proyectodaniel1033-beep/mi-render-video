@@ -46,21 +46,29 @@ def procesar_video(task_id: str, video_url: str, audio_url: str):
             ruta_salida
         ]
         
-        # Ejecutar FFmpeg
-        subprocess.run(comando, check=True)
-        
-        # Si todo sale bien, cambia a completed
-        estados_tareas[task_id] = "completed"
+        # Descargar el audio de la URL a un archivo local temporal
+    import requests
+    ruta_audio_entrada = f"input_audio_{task_id}.mp3"
+    
+    response_audio = requests.get(datos.audio_url)
+    with open(ruta_audio_entrada, "wb") as f:
+        f.write(response_audio.content)
 
-    except Exception as e:
-        print(f"Error en el proceso: {e}")
-        estados_tareas[task_id] = "failed"
-        
-    finally:
-        # Limpiar archivos temporales locales para no saturar el servidor
-        for ruta in [ruta_video_entrada, ruta_audio_entrada]:
-            if os.path.exists(ruta):
-                os.remove(ruta)
+    # Ejecutar FFmpeg
+    subprocess.run(comando, check=True)
+    
+    # Si todo sale bien, cambia a completed
+    estados_tareas[task_id] = "completed"
+
+except Exception as e:
+    print(f"Error en el proceso: {e}")
+    estados_tareas[task_id] = "failed"
+
+finally:
+    # Limpiar archivos temporales locales
+    for ruta in [ruta_video_entrada, ruta_audio_entrada]:
+        if os.path.exists(ruta):
+            os.remove(ruta)
 
 @app.post("/transcode")
 def iniciar_transcode(datos: TranscodeRequest, background_tasks: BackgroundTasks):
