@@ -1,9 +1,8 @@
-import os
 import uuid
-import subprocess
 import requests
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI()
 
@@ -11,21 +10,30 @@ app = FastAPI()
 estados_tareas = {}
 
 class TranscodeRequest(BaseModel):
-    video_url: str
-    audio_url: str
-    webhook_url: str
+    video_url: Optional[str] = None
+    audio_url: Optional[str] = None
+    webhook_url: Optional[str] = None
 
 def procesar_video(task_id: str, datos: TranscodeRequest):
-    # 1. Aquí irá tu lógica de FFmpeg y renderizado del video...
-    
-    # 2. Actualizamos el estado a completado en memoria
-    estados_tareas[task_id] = "completed"
-    
-    # 3. Notificamos al webhook de n8n para que despierte el nodo Wait
     try:
-        requests.post(datos.webhook_url, json={"status": "completed", "task_id": task_id})
+        # 1. Aquí puedes descargar los archivos usando datos.video_url y datos.audio_url
+        # 2. Aquí ejecutas tu lógica de FFmpeg (por ejemplo, con subprocess)
+        print(f"Procesando video para la tarea {task_id} con URL: {datos.video_url}")
+        
+        # Simulamos el proceso de renderizado...
+        
+        # 3. Actualizamos el estado a completado
+        estados_tareas[task_id] = "completado"
+        
+        # 4. Notificamos al webhook de n8n para que despierte el nodo Wait
+        if datos.webhook_url:
+            requests.post(
+                datos.webhook_url, 
+                json={"status": "completado", "task_id": task_id}
+            )
     except Exception as e:
-        print(f"Error al notificar a n8n: {e}")
+        estados_tareas[task_id] = "error"
+        print(f"Error en el proceso de video: {e}")
 
 @app.post("/transcode")
 def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: BackgroundTasks):
@@ -42,4 +50,4 @@ def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: Backgro
 @app.get("/status/{task_id}")
 def obtener_estado(task_id: str):
     estado = estados_tareas.get(task_id, "no_encontrado")
-    return {"id": task_id, "status": status}
+    return {"id": task_id, "status": estado}
