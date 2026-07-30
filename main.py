@@ -16,8 +16,16 @@ class TranscodeRequest(BaseModel):
     webhook_url: str
 
 def procesar_video(task_id: str, datos: TranscodeRequest):
-    # Aquí irá tu lógica de transcodificación con FFmpeg
-    pass
+    # 1. Aquí irá tu lógica de FFmpeg y renderizado del video...
+    
+    # 2. Actualizamos el estado a completado en memoria
+    estados_tareas[task_id] = "completed"
+    
+    # 3. Notificamos al webhook de n8n para que despierte el nodo Wait
+    try:
+        requests.post(datos.webhook_url, json={"status": "completed", "task_id": task_id})
+    except Exception as e:
+        print(f"Error al notificar a n8n: {e}")
 
 @app.post("/transcode")
 def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: BackgroundTasks):
