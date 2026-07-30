@@ -16,18 +16,18 @@ class TranscodeRequest(BaseModel):
 
 def procesar_video(task_id: str, datos: TranscodeRequest):
     try:
-        # ... Aquí ocurre todo tu proceso de FFmpeg y renderizado ...
+        # ... Todo tu código de FFmpeg y proceso de video aquí ...
         
         estados_tareas[task_id] = "completado"
         
-        # AQUÍ ESTÁ LA CLAVE: Notificar a n8n para que despierte el nodo Wait
-       # AQUÍ ESTÁ LA CLAVE: Notificar a n8n para que despierte el nodo Wait
-    if datos.webhook_url:
-       payload = {"status": "completed", "task_id": task_id}
-       response = requests.post(datos.webhook_url, json=payload)
-       print(f"Webhook enviado a n8n: {response.status_code}")
+        # Notificar a n8n cuando finalice con éxito
+        if datos.webhook_url:
+            payload = {"status": "completed", "task_id": task_id}
+            response = requests.post(datos.webhook_url, json=payload)
+            print(f"Webhook enviado a n8n: {response.status_code}")
             
     except Exception as e:
+        # Este bloque es obligatorio para que el try no dé SyntaxError
         estados_tareas[task_id] = "error"
         if datos.webhook_url:
             requests.post(datos.webhook_url, json={"status": "error", "message": str(e)})
