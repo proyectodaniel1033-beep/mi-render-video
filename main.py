@@ -13,7 +13,8 @@ estados_tareas = {}
 class TranscodeRequest(BaseModel):
     video_url: str
     audio_url: str
-
+    webhook_url: str
+    
 def procesar_video(task_id: str, datos: TranscodeRequest):
     ruta_video_entrada = f"input_video_{task_id}.mp4"
     ruta_audio_entrada = f"input_audio_{task_id}.mp3"
