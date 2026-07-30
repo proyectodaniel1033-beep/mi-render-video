@@ -21,10 +21,11 @@ def procesar_video(task_id: str, datos: TranscodeRequest):
         estados_tareas[task_id] = "completado"
         
         # AQUÍ ESTÁ LA CLAVE: Notificar a n8n para que despierte el nodo Wait
-        if datos.webhook_url:
-            payload = {"status": "success", "task_id": task_id}
-            response = requests.post(datos.webhook_url, json=payload)
-            print(f"Webhook enviado a n8n: {response.status_code}")
+       # AQUÍ ESTÁ LA CLAVE: Notificar a n8n para que despierte el nodo Wait
+    if datos.webhook_url:
+       payload = {"status": "completed", "task_id": task_id}
+       response = requests.post(datos.webhook_url, json=payload)
+       print(f"Webhook enviado a n8n: {response.status_code}")
             
     except Exception as e:
         estados_tareas[task_id] = "error"
