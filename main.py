@@ -16,24 +16,20 @@ class TranscodeRequest(BaseModel):
 
 def procesar_video(task_id: str, datos: TranscodeRequest):
     try:
-        # 1. Aquí puedes descargar los archivos usando datos.video_url y datos.audio_url
-        # 2. Aquí ejecutas tu lógica de FFmpeg (por ejemplo, con subprocess)
-        print(f"Procesando video para la tarea {task_id} con URL: {datos.video_url}")
+        # ... Aquí ocurre todo tu proceso de FFmpeg y renderizado ...
         
-        # Simulamos el proceso de renderizado...
-        
-        # 3. Actualizamos el estado a completado
         estados_tareas[task_id] = "completado"
         
-        # 4. Notificamos al webhook de n8n para que despierte el nodo Wait
+        # AQUÍ ESTÁ LA CLAVE: Notificar a n8n para que despierte el nodo Wait
         if datos.webhook_url:
-            requests.post(
-                datos.webhook_url, 
-                json={"status": "completado", "task_id": task_id}
-            )
+            payload = {"status": "success", "task_id": task_id}
+            response = requests.post(datos.webhook_url, json=payload)
+            print(f"Webhook enviado a n8n: {response.status_code}")
+            
     except Exception as e:
         estados_tareas[task_id] = "error"
-        print(f"Error en el proceso de video: {e}")
+        if datos.webhook_url:
+            requests.post(datos.webhook_url, json={"status": "error", "message": str(e)})
 
 @app.post("/transcode")
 def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: BackgroundTasks):
