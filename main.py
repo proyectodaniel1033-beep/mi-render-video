@@ -34,4 +34,4 @@ def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: Backgro
 @app.get("/status/{task_id}")
 def obtener_estado(task_id: str):
     estado = estados_tareas.get(task_id, "no_encontrado")
-    return {"id": task_id, "estado": estado}
+    return {"id": task_id, "status": status}
