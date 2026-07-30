@@ -11,9 +11,8 @@ app = FastAPI()
 estados_tareas = {}
 
 class TranscodeRequest(BaseModel):
-    video_url: str
-    audio_url: str
-    webhook_url: str
+    id: str
+    callbackUrl: str
     
 def procesar_video(task_id: str, datos: TranscodeRequest):
     ruta_video_entrada = f"input_video_{task_id}.mp4"
