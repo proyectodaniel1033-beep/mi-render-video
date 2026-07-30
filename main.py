@@ -1,43 +1,41 @@
+import os
+import uuid
+import subprocess
+import requests
 from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
-import requests
-import subprocess
-import uuid
-import os
 
 app = FastAPI()
 
-# Diccionario temporal para guardar el estado de las tareas
+# Diccionario en memoria para almacenar el estado de las tareas
 estados_tareas = {}
 
 class TranscodeRequest(BaseModel):
     video_url: str
     audio_url: str
 
-def procesar_video(task_id: str, video_url: str, audio_url: str):
+def procesar_video(task_id: str, datos: TranscodeRequest):
+    ruta_video_entrada = f"input_video_{task_id}.mp4"
+    ruta_audio_entrada = f"input_audio_{task_id}.mp3"
+    ruta_salida = f"output_video_{task_id}.mp4"
+
     try:
         estados_tareas[task_id] = "processing"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 
-        ruta_video_entrada = f"input_video_{task_id}.mp4"
-        ruta_audio_entrada = f"input_audio_{task_id}.mp3"
-        ruta_salida = f"output_video_{task_id}.mp4"
-
-        # 1. Descargar video
-        r_video = requests.get(video_url, headers=headers, stream=True)
+        # 1. Descargar el video de la URL
+        response_video = requests.get(datos.video_url)
         with open(ruta_video_entrada, "wb") as f:
-            for chunk in r_video.iter_content(chunk_size=8192):
-                f.write(chunk)
+            f.write(response_video.content)
 
-        # 2. Descargar audio
-        r_audio = requests.get(audio_url, headers=headers, stream=True)
+        # 2. Descargar el audio de la URL de forma segura
+        response_audio = requests.get(datos.audio_url)
         with open(ruta_audio_entrada, "wb") as f:
-            for chunk in r_audio.iter_content(chunk_size=8192):
-                f.write(chunk)
+            f.write(response_audio.content)
 
-        # 3. Comando FFmpeg para combinar
+        # 3. Construir el comando de FFmpeg para fusionar video y audio
         comando = [
             "ffmpeg",
+            "-y",
             "-i", ruta_video_entrada,
             "-i", ruta_audio_entrada,
             "-c:v", "copy",
@@ -45,30 +43,25 @@ def procesar_video(task_id: str, video_url: str, audio_url: str):
             "-shortest",
             ruta_salida
         ]
+
+        # 4. Ejecutar FFmpeg
+        subprocess.run(comando, check=True)
         
-        # Descargar el audio de la URL a un archivo local temporal
-    import requests
-    ruta_audio_entrada = f"input_audio_{task_id}.mp3"
-    
-    response_audio = requests.get(datos.audio_url)
-    with open(ruta_audio_entrada, "wb") as f:
-        f.write(response_audio.content)
+        # Si todo sale bien
+        estados_tareas[task_id] = "completed"
 
-    # Ejecutar FFmpeg
-    subprocess.run(comando, check=True)
-    
-    # Si todo sale bien, cambia a completed
-    estados_tareas[task_id] = "completed"
+    except Exception as e:
+        print(f"Error en el proceso: {e}")
+        estados_tareas[task_id] = "failed"
 
-except Exception as e:
-    print(f"Error en el proceso: {e}")
-    estados_tareas[task_id] = "failed"
-
-finally:
-    # Limpiar archivos temporales locales
-    for ruta in [ruta_video_entrada, ruta_audio_entrada]:
-        if os.path.exists(ruta):
-            os.remove(ruta)
+    finally:
+        # Limpiar archivos temporales locales del servidor
+        for ruta in [ruta_video_entrada, ruta_audio_entrada, ruta_salida]:
+            if os.path.exists(ruta):
+                try:
+                    os.remove(ruta)
+                except Exception:
+                    pass
 
 @app.post("/transcode")
 def iniciar_transcode(datos: TranscodeRequest, background_tasks: BackgroundTasks):
@@ -76,11 +69,11 @@ def iniciar_transcode(datos: TranscodeRequest, background_tasks: BackgroundTasks
     estados_tareas[task_id] = "pending"
 
     # Ejecutar en segundo plano para que Render no corte la petición HTTP
-    background_tasks.add_task(procesar_video, task_id, datos.video_url, datos.audio_url)
+    background_tasks.add_task(procesar_video, task_id, datos)
 
     return {"id": task_id, "status": "pending"}
 
 @app.get("/status/{task_id}")
-def verificar_estado(task_id: str):
+def obtener_estado(task_id: str):
     estado = estados_tareas.get(task_id, "not_found")
     return {"id": task_id, "status": estado}
