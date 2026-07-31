@@ -31,7 +31,11 @@ def procesar_video(task_id: str, datos: TranscodeRequest):
         # Este bloque es obligatorio para que el try no dé SyntaxError
         estados_tareas[task_id] = "error"
         if datos.webhook_url:
-            requests.post(datos.webhook_url, json={"status": "error", "message": str(e)})
+    # Reemplaza automáticamente localhost por tu dominio público de ngrok
+    url_real = datos.webhook_url.replace("http://localhost:5678", "https://resend-patriot-dehydrate.ngrok-free.dev")
+
+    response = requests.get(url_real)
+    print(f"Webhook enviado a n8n: {response.status_code}")
 
 @app.post("/transcode")
 def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: BackgroundTasks):
