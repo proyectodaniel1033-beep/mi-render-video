@@ -21,11 +21,11 @@ def procesar_video(task_id: str, datos: TranscodeRequest):
         estados_tareas[task_id] = "completado"
         
         # Notificar a n8n cuando finalice con éxito
-        if datos.webhook_url:
-            payload = {"status": "completed", "task_id": task_id}
-            # En lugar de requests.post(datos.webhook_url, json=payload):
-            response = requests.get(datos.webhook_url)
-            print(f"Webhook enviado a n8n: {response.status_code}")
+        
+    if datos.webhook_url:
+       url_real = datos.webhook_url.replace("http://localhost:5678", "https://resend-patriot-dehydrate.ngrok-free.dev")
+       response = requests.get(url_real)
+       print(f"Webhook enviado a n8n: {response.status_code}")
             
     except Exception as e:
         # Este bloque es obligatorio para que el try no dé SyntaxError
