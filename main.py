@@ -23,7 +23,8 @@ def procesar_video(task_id: str, datos: TranscodeRequest):
         # Notificar a n8n cuando finalice con éxito
         if datos.webhook_url:
             payload = {"status": "completed", "task_id": task_id}
-            response = requests.post(datos.webhook_url, json=payload)
+            # En lugar de requests.post(datos.webhook_url, json=payload):
+            response = requests.get(datos.webhook_url)
             print(f"Webhook enviado a n8n: {response.status_code}")
             
     except Exception as e:
