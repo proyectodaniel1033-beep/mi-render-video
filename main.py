@@ -15,6 +15,8 @@ class TranscodeRequest(BaseModel):
     webhook_url: Optional[str] = None
 
 def procesar_video(task_id: str, datos: TranscodeRequest):
+    
+    
     try:
     # ... todo tu código de FFmpeg y proceso de video va aquí ...
     
