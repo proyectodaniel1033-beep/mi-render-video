@@ -1,45 +1,45 @@
-import uuid
-import requests
-from fastapi import FastAPI, BackgroundTasks
-from pydantic import BaseModel
-from typing import Optional
+import os
+import subprocess
+from flask import Flask, request, jsonify
 
-app = FastAPI()
-estados_tareas = {}
+app = Flask(__name__)
 
-class TranscodeRequest(BaseModel):
-    video_url: Optional[str] = None
-    audio_url: Optional[str] = None
-    webhook_url: Optional[str] = None
+@app.route('/transcode', methods=['POST'])
+def transcode():
+    data = request.json
+    # Ahora esperamos una lista de videos en lugar de uno solo
+    video_urls = data.get('video_urls', [])
+    audio_url = data.get('audio_url')
+    
+    if not video_urls:
+        return jsonify({"error": "No se proporcionaron URLs de video"}), 400
 
-def procesar_video(task_id: str, datos: TranscodeRequest):
-    try:
-        url_video_terminado = "https://cdn.pixabay.com/video/2016/02/29/2340-157269921_large.mp4"
-        estados_tareas[task_id] = "completado"
+    downloaded_files = []
+    
+    # 1. Descargar cada video de la lista de forma temporal
+    for i, url in enumerate(video_urls):
+        local_video = f"input_{i}.mp4"
+        os.system(f"curl -L '{url}' -o {local_video}")
+        downloaded_files.append(local_video)
 
-        # Usa tu URL de prueba de n8n aquí directamente entre las comillas
-        url_real = "https://resend-patriot-dehydrate.ngrok-free.dev/webhook-test/97ce5368-1272-468e-85c3-fdaf840605fb"
-        
-        payload = {
-            "task_id": task_id,
-            "status": "success",
-            "video_result_url": url_video_terminado
-        }
-        
-        response = requests.post(url_real, json=payload)
-        print(f"Webhook enviado a n8n: {response.status_code}")
+    # 2. Crear un archivo de texto que FFmpeg necesita para unir los videos (Concat demuxer)
+    with open("mylist.txt", "w") as f:
+        for file in downloaded_files:
+            f.write(f"file '{file}'\n")
 
-    except Exception as e:
-        estados_tareas[task_id] = "error"
-        print(f"Error procesando video: {str(e)}")
+    # 3. Unir los videos y añadir el audio con FFmpeg
+    output_video = "output_final.mp4"
+    
+    # Comando FFmpeg para concatenar videos y mezclar el audio
+    ffmpeg_cmd = (
+        f"ffmpeg -f concat -safe 0 -i mylist.txt -i {audio_url} "
+        f"-c:v libx264 -c:a aac -map 0:v:0 -map 1:a:0 -shortest {output_video} -y"
+    )
+    
+    subprocess.run(ffmpeg_cmd, shell=True)
 
-@app.post("/transcode")
-def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: BackgroundTasks):
-    task_id = str(uuid.uuid4())
-    estados_tareas[task_id] = "pendiente"
-    background_tasks.add_task(procesar_video, task_id, datos)
-    return {"id": task_id, "status": "pending"}
+    # Aquí retornarías o subirías tu video resultante
+    return jsonify({"status": "success", "message": "Video combinado y procesado correctamente"})
 
-@app.get("/")
-def read_root():
-    return {"mensaje": "¡Tu servicio está live!"}
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
