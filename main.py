@@ -35,6 +35,8 @@ def procesar_video(task_id: str, datos: TranscodeRequest):
         print(f"Webhook enviado a n8n: {response.status_code}")
 
     except Exception as e:
+        estados_tareas[task_id] = "error"
+        print(f"Error procesando video: {str(e)}")
 
 @app.post("/transcode")
 def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: BackgroundTasks):
