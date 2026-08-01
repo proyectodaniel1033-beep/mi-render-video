@@ -17,28 +17,24 @@ class TranscodeRequest(BaseModel):
 def procesar_video(task_id: str, datos: TranscodeRequest):
     try:
         # ... Aquí va tu código de FFmpeg y procesamiento de video ...
-        # Supongamos que tu video terminado queda guardado en una URL o ruta accesible:
         url_video_terminado = "https://cdn.pixabay.com/video/2016/02/29/2340-157269921_large.mp4"
         
         estados_tareas[task_id] = "completado"
 
-        # Notificar a n8n de forma limpia y directa mediante POST
-        if datos.webhook_url:
-            url_real = datos.webhook_url.replace("http://localhost:5678", "https://tu-url-de-ngrok.ngrok-free.dev")
-            
-            payload = {
-                "task_id": task_id,
-                "status": "success",
-                "video_result_url": url_video_terminado
-            }
-            
-            # Usamos POST para enviar la información al Webhook de n8n
-            response = requests.post(url_real, json=payload)
-            print(f"Webhook enviado a n8n: {response.status_code}")
+        # Pon tu URL de PRUEBA de n8n entre las comillas (cópiala de tu nodo Webhook)
+        url_real = "https://tu-url-de-ngrok.ngrok-free.dev/webhook-test/TU-RUTA-AQUI"
+        
+        payload = {
+            "task_id": task_id,
+            "status": "success",
+            "video_result_url": url_video_terminado
+        }
+        
+        # Le pegamos directamente al Webhook sin condiciones
+        response = requests.post(url_real, json=payload)
+        print(f"Webhook enviado a n8n: {response.status_code}")
 
     except Exception as e:
-        estados_tareas[task_id] = "error"
-        print(f"Error procesando video: {str(e)}")
 
 @app.post("/transcode")
 def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: BackgroundTasks):
