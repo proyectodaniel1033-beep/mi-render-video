@@ -15,23 +15,20 @@ class TranscodeRequest(BaseModel):
     webhook_url: Optional[str] = None
 
 def procesar_video(task_id: str, datos: TranscodeRequest):
-    
-    
     try:
-    # ... todo tu código de FFmpeg y proceso de video va aquí ...
-    
-    estados_tareas[task_id] = "completado"
+        # ... Tu código de FFmpeg y procesamiento de video ...
+        
+        estados_tareas[task_id] = "completado"
 
-    # Notificar a n8n cuando finalice con éxito
-    if datos.webhook_url:
-        url_real = datos.webhook_url.replace("http://localhost:5678", "https://resend-patriot-dehydrate.ngrok-free.dev")
-        response = requests.get(url_real)
-        print(f"Webhook enviado a n8n: {response.status_code}")
+        # Notificar a n8n de forma limpia y directa
+        if datos.webhook_url:
+            url_real = datos.webhook_url.replace("http://localhost:5678", "https://resend-patriot-dehydrate.ngrok-free.dev")
+            response = requests.get(url_real)
+            print(f"Webhook enviado a n8n: {response.status_code}")
 
-except Exception as e:
-    # Este bloque es obligatorio para que el try no de SyntaxError
-    estados_tareas[task_id] = "error"
-    print(f"Error en la tarea: {str(e)}")
+    except Exception as e:
+        estados_tareas[task_id] = "error"
+        print(f"Error procesando video: {str(e)}")
 
 @app.post("/transcode")
 def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: BackgroundTasks):
