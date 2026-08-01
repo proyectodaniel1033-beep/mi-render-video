@@ -1,6 +1,6 @@
 import uuid
 import requests
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI()
 from pydantic import BaseModel
 from typing import Optional
 
@@ -42,7 +42,6 @@ def iniciar_transcodificacion(datos: TranscodeRequest, background_tasks: Backgro
     
     return {"id": task_id, "status": "pending"}
 
-@app.get("/status/{task_id}")
-def obtener_estado(task_id: str):
-    estado = estados_tareas.get(task_id, "no_encontrado")
-    return {"id": task_id, "status": estado}
+@app.get("/")
+def read_root():
+    return {"mensaje": "¡Tu servicio está live!"}
