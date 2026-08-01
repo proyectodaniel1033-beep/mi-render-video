@@ -23,9 +23,7 @@ def procesar_video(task_id: str, datos: TranscodeRequest):
     estados_tareas[task_id] = "completado"
 
     # Notificar a n8n cuando finalice con éxito
-    
-    
-if datos.webhook_url:
+    if datos.webhook_url:
         url_real = datos.webhook_url.replace("http://localhost:5678", "https://resend-patriot-dehydrate.ngrok-free.dev")
         response = requests.get(url_real)
         print(f"Webhook enviado a n8n: {response.status_code}")
