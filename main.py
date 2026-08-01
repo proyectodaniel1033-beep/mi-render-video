@@ -1,6 +1,6 @@
 import uuid
 import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional
 
