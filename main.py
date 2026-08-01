@@ -22,7 +22,7 @@ def procesar_video(task_id: str, datos: TranscodeRequest):
         estados_tareas[task_id] = "completado"
 
         # Pon tu URL de PRUEBA de n8n entre las comillas (cópiala de tu nodo Webhook)
-        url_real = "https://tu-url-de-ngrok.ngrok-free.dev/webhook-test/http://localhost:5678/webhook-test/97ce5368-1272-468e-85c3-fdaf840605fb
+        url_real = "https://resend-patriot-dehydrate.ngrok-free.dev/webhook-test/97ce5368-1272-468e-85c3-fdaf840605fb"
         
         payload = {
             "task_id": task_id,
