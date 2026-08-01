@@ -18,7 +18,7 @@ def procesar_video(task_id: str, datos: TranscodeRequest):
     try:
         # ... Aquí va tu código de FFmpeg y procesamiento de video ...
         # Supongamos que tu video terminado queda guardado en una URL o ruta accesible:
-        url_video_terminado = https://cdn.pixabay.com/video/2016/02/29/2340-157269921_large.mp4
+        url_video_terminado = "https://cdn.pixabay.com/video/2016/02/29/2340-157269921_large.mp4"
         
         estados_tareas[task_id] = "completado"
 
