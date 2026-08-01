@@ -16,12 +16,14 @@ class TranscodeRequest(BaseModel):
 
 def procesar_video(task_id: str, datos: TranscodeRequest):
     try:
-        # ... Tu código de FFmpeg y procesamiento de video ...
+        # AQUÍ VA TU LÓGICA DE FFPEG Y DESCARGA DE VIDEOS/AUDIOS
+        # Ejemplo: descargar datos.video_url, datos.audio_url, unirlos con FFmpeg, etc.
         
         estados_tareas[task_id] = "completado"
 
-        # Notificar a n8n de forma limpia y directa
+        # Notificar a n8n de forma limpia y directa usando el webhook recibido
         if datos.webhook_url:
+            # Asegúrate de usar tu URL real de ngrok
             url_real = datos.webhook_url.replace("http://localhost:5678", "https://resend-patriot-dehydrate.ngrok-free.dev")
             response = requests.get(url_real)
             print(f"Webhook enviado a n8n: {response.status_code}")
