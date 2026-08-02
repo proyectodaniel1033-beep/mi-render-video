@@ -35,18 +35,18 @@ def transcode():
             for chunk in aud_res.iter_content(chunk_size=8192):
                 f.write(chunk)
 
-        # Procesar con FFmpeg adaptado para que dure lo que el audio
+        # Procesar con FFmpeg optimizado para forzar la duración exacta del audio sin recortar
         command = [
             "ffmpeg", "-y",
-            "-stream_loop", "-1",  # Repite el video si es más corto que el audio
             "-i", input_video,
             "-i", input_audio,
+            "-filter_complex", "[0:v]scale=1280:1920:force_original_aspect_ratio=decrease,pad=1280:1920:(ow-iw)/2:(oh-ih)/2[v];[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a]",
+            "-map", "[v]",
+            "-map", "[a]",
             "-c:v", "libx264",
+            "-preset", "ultrafast",
             "-c:a", "aac",
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-shortest",  # Corta exactamente cuando termina el audio de la IA
-            "-pix_fmt", "yuv420p",
+            "-shortest",
             output_video
         ]
         
