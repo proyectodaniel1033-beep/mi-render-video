@@ -2,11 +2,13 @@ import os
 import subprocess
 import requests
 from flask import Flask, request, jsonify
+import json
 
 app = Flask(__name__)
 
 @app.route('/transcode', methods=['POST'])
 def transcode():
+    # 1. Verificar que llegue el audio local de la IA
     if 'audio' not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
 
@@ -14,11 +16,10 @@ def transcode():
     input_audio = "input_audio.mp3"
     audio_file.save(input_audio)
 
-    # Recibimos las URLs de los videos de stock enviadas por n8n (o una lista generada automáticamente)
+    # 2. Recibir las URLs de los videos de stock enviadas por n8n (desde el Aggregate)
     video_urls_raw = request.form.get("video_urls", "[]")
     webhook_url = request.form.get("webhook_url")
 
-    import json
     try:
         video_urls = json.loads(video_urls_raw)
     except:
@@ -30,7 +31,7 @@ def transcode():
     output_video = "output_final.mp4"
 
     try:
-        # 1. Descargar todos los videos cortos que n8n seleccionó automáticamente
+        # 3. Descargar cada uno de los clips de video cortos
         video_files = []
         for i, url in enumerate(video_urls):
             v_name = f"video_part_{i}.mp4"
@@ -47,13 +48,15 @@ def transcode():
         if not video_files:
             return jsonify({"error": "Failed to download any video parts"}), 400
 
-        # 2. Crear archivo de lista para FFmpeg
+        # 4. Crear archivo de lista para FFmpeg con bucle integrado
+        # Repetimos la secuencia de clips varias veces (ej. 5 veces) para asegurar que superen los 2 minutos
         list_filename = "file_list.txt"
         with open(list_filename, "w") as f:
-            for v_name in video_files:
-                f.write(f"file '{v_name}'\n")
+            for _ in range(5): 
+                for v_name in video_files:
+                    f.write(f"file '{v_name}'\n")
 
-        # 3. Concatenar los videos para formar un video base continuo
+        # 5. Unir los videos en un video base continuo
         combined_video = "combined_video.mp4"
         concat_command = [
             "ffmpeg", "-y",
@@ -65,7 +68,7 @@ def transcode():
         ]
         subprocess.run(concat_command, check=True)
 
-        # 4. Mezclar el video continuo con el audio local y cortar exactamente donde termina el audio (-shortest)
+        # 6. Sincronizar el video largo con tu audio local y forzar el corte exacto con -shortest
         final_command = [
             "ffmpeg", "-y",
             "-i", combined_video,
@@ -73,7 +76,7 @@ def transcode():
             "-c:v", "libx264",
             "-preset", "ultrafast",
             "-c:a", "aac",
-            "-shortest",  # Forzará a que el video final dure exactamente lo que dura tu audio local completo
+            "-shortest",  # Corta de forma estricta justo al terminar tu audio local
             "-pix_fmt", "yuv420p",
             output_video
         ]
@@ -81,20 +84,27 @@ def transcode():
         result = subprocess.run(final_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         
         if result.returncode != 0:
+            print(f"Error FFmpeg: {result.stderr}")
             return jsonify({"error": "FFmpeg failed", "details": result.stderr}), 500
 
-        # 5. Subir el resultado final a Catbox
-        downloaded_url = ""
-        with open(output_video, "rb") as f:
-            res = requests.post(
-                "https://catbox.moe/user/api.php",
-                data={"reqtype": "fileupload", "userhash": ""},
-                files={"fileToUpload": f}
-            )
-            if res.status_code == 200:
-                downloaded_url = res.text.strip()
+        print("¡Video largo generado y sincronizado con éxito!")
 
-        # 6. Notificar a n8n
+        # 7. Subir el resultado final a Catbox
+        downloaded_url = ""
+        try:
+            with open(output_video, "rb") as f:
+                res = requests.post(
+                    "https://catbox.moe/user/api.php",
+                    data={"reqtype": "fileupload", "userhash": ""},
+                    files={"fileToUpload": f}
+                )
+                if res.status_code == 200:
+                    downloaded_url = res.text.strip()
+                    print(f"Subido a Catbox: {downloaded_url}")
+        except Exception as e:
+            print(f"Error al subir: {str(e)}")
+
+        # 8. Notificar a n8n si hay webhook
         if webhook_url:
             try:
                 requests.post(webhook_url, json={"status": "completed", "video": downloaded_url})
@@ -104,6 +114,7 @@ def transcode():
         return jsonify({"status": "success", "video_url": downloaded_url}), 200
 
     except Exception as e:
+        print(f"Error general: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
