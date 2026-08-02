@@ -70,7 +70,6 @@ def transcode():
                 print(f"Error al notificar el webhook: {str(e)}")
 
         return jsonify({"status": "success", "video_url": downloaded_url}), 200
-
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
