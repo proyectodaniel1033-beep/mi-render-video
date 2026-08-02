@@ -11,6 +11,7 @@ def transcode():
     if not data:
         return jsonify({"error": "No JSON data provided"}), 400
 
+    # Ahora recibimos una lista de videos cortos
     video_urls = data.get("video_urls", [])
     audio_url = data.get("audio_url")
     webhook_url = data.get("webhook_url")
@@ -18,47 +19,66 @@ def transcode():
     if not video_urls or not audio_url:
         return jsonify({"error": "Missing video_urls or audio_url"}), 400
 
-    input_video = "input_video.mp4"
     input_audio = "input_audio.mp3"
     output_video = "output_final.mp4"
 
     try:
-        # Descargar video de entrada
-        vid_res = requests.get(video_urls[0], stream=True)
-        with open(input_video, "wb") as f:
-            for chunk in vid_res.iter_content(chunk_size=8192):
-                f.write(chunk)
-
-        # Descargar audio de entrada
+        # 1. Descargar el audio largo de la IA
         aud_res = requests.get(audio_url, stream=True)
         with open(input_audio, "wb") as f:
             for chunk in aud_res.iter_content(chunk_size=8192):
                 f.write(chunk)
 
-        # Procesar con FFmpeg optimizado para forzar la duración exacta del audio sin recortar
-        command = [
+        # 2. Descargar cada video corto y preparar la lista para concatenar
+        video_files = []
+        for i, url in enumerate(video_urls):
+            v_name = f"video_part_{i}.mp4"
+            vid_res = requests.get(url, stream=True)
+            with open(v_name, "wb") as f:
+                for chunk in vid_res.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            video_files.append(v_name)
+
+        # Crear el archivo de texto que FFmpeg usa para unir los videos en orden
+        list_filename = "file_list.txt"
+        with open(list_filename, "w") as f:
+            for v_name in video_files:
+                f.write(f"file '{v_name}'\n")
+
+        # 3. Unir los videos en un video largo temporal
+        combined_video = "combined_video.mp4"
+        concat_command = [
             "ffmpeg", "-y",
-            "-i", input_video,
+            "-f", "concat",
+            "-safe", "0",
+            "-i", list_filename,
+            "-c", "copy",
+            combined_video
+        ]
+        subprocess.run(concat_command, check=True)
+
+        # 4. Combinar el video largo resultante con el audio de la IA y ajustar duración
+        final_command = [
+            "ffmpeg", "-y",
+            "-i", combined_video,
             "-i", input_audio,
-            "-filter_complex", "[0:v]scale=1280:1920:force_original_aspect_ratio=decrease,pad=1280:1920:(ow-iw)/2:(oh-ih)/2[v];[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a]",
-            "-map", "[v]",
-            "-map", "[a]",
             "-c:v", "libx264",
             "-preset", "ultrafast",
             "-c:a", "aac",
-            "-shortest",
+            "-shortest",  # Se detiene exactamente cuando termina el diálogo de la IA
+            "-pix_fmt", "yuv420p",
             output_video
         ]
         
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(final_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         
         if result.returncode != 0:
-            print(f"Error en FFmpeg: {result.stderr}")
+            print(f"Error en FFmpeg final: {result.stderr}")
             return jsonify({"error": "FFmpeg failed", "details": result.stderr}), 500
 
-        print("¡Video procesado con éxito!")
+        print("¡Video largo con audio generado con éxito!")
 
-        # Subir el video resultante a Catbox para obtener un enlace público descargable
+        # 5. Subir el resultado final a Catbox
         downloaded_url = ""
         try:
             with open(output_video, "rb") as f:
@@ -73,7 +93,7 @@ def transcode():
         except Exception as e:
             print(f"Error al subir el video: {str(e)}")
 
-        # Notificar al Webhook de n8n con el enlace real
+        # 6. Notificar a n8n
         if webhook_url:
             try:
                 requests.post(webhook_url, json={
