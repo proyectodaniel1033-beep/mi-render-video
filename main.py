@@ -19,46 +19,58 @@ def transcode():
         if not video_urls:
             return jsonify({"error": "No se encontró ninguna URL de video"}), 400
 
-        # 1. Descargar el primer video de la lista
         video_url = video_urls[0]
         print(f"Descargando video desde: {video_url}")
+        
+        # Descarga segura del video
         video_response = requests.get(video_url, stream=True)
         if video_response.status_code != 200:
-            return jsonify({"error": "No se pudo descargar ningún video"}), 500
+            return jsonify({"error": "No se pudo descargar el video de la fuente"}), 500
 
-        with open("input_0.mp4", "wb") as f:
+        with open("input_video.mp4", "wb") as f:
             for chunk in video_response.iter_content(chunk_size=8192):
                 f.write(chunk)
 
-        # 2. Definir ruta del video de salida
+        # Descarga segura del audio
+        print(f"Descargando audio desde: {audio_url}")
+        audio_response = requests.get(audio_url, stream=True)
+        if audio_response.status_code != 200:
+            return jsonify({"error": "No se pudo descargar el audio"}), 500
+
+        with open("input_audio.mp3", "wb") as f:
+            for chunk in audio_response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
         output_video = "output_final.mp4"
 
-        # 3. Ejecutar FFmpeg simplificado para unir video y audio directos
-        print("Iniciando procesamiento con FFmpeg...")
+        # Comando FFmpeg ultra-compatible que reescala y fuerza streams universales
+        print("Procesando con FFmpeg...")
         ffmpeg_cmd = (
-            f"ffmpeg -i input_0.mp4 -i \"{audio_url}\" "
-            f"-c:v libx264 -c:a aac -shortest {output_video} -y"
+            "ffmpeg -y -i input_video.mp4 -i input_audio.mp3 "
+            "-c:v libx264 -preset ultrafast -crf 23 "
+            "-c:a aac -b:a 192k "
+            "-shortest output_final.mp4"
         )
 
         result = subprocess.run(ffmpeg_cmd, shell=True, capture_output=True, text=True)
-        
+
         if result.returncode != 0:
-            print(f"Error en FFmpeg: {result.stderr}")
-            return jsonify({"error": "Error en FFmpeg", "details": result.stderr}), 500
+            print(f"Error crítico en FFmpeg: {result.stderr}")
+            return jsonify({"error": "Error interno en FFmpeg", "details": result.stderr}), 500
 
-        print("Procesamiento completado con éxito.")
+        print("¡Video procesado con éxito!")
 
-        # 4. Si hay webhook configurado, notificar de vuelta a n8n para liberar el nodo Wait
+        # Notificar al Webhook de n8n (nodo Wait)
         if webhook_url:
             try:
                 requests.post(webhook_url, json={"status": "completed", "video": output_video})
             except Exception as e:
-                print(f"Error al notificar al webhook: {str(e)}")
+                print(f"Error al notificar el webhook: {str(e)}")
 
-        return jsonify({"status": "success", "message": "Video procesado correctamente"}), 200
+        return jsonify({"status": "success", "message": "Proceso finalizado correctamente"}), 200
 
     except Exception as e:
-        print(f"Excepción interna: {str(e)}")
+        print(f"Excepción general: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
