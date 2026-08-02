@@ -29,14 +29,21 @@ def upload_to_catbox(file_path: str) -> str:
 @app.post("/transcode")
 async def transcode_video(
     audio_url: str = Form(...),
-    video_urls: List[str] = Form(...)  # Recibe múltiples URLs como una lista
+    video_urls: str = Form(...)  # Recibe el texto con los enlaces separados por comas
 ):
-    # Tu código para iterar sobre los videos y descargarlos:
-    for i, url in enumerate(video_urls):
-        video_path = os.path.join(temp_dir, f"video_{i}.mp4")
-        download_file(url.strip(), video_path)
-    
-    # Resto de tu lógica con FFmpeg...
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # 1. Descargar el archivo de audio de Catbox
+        audio_path = os.path.join(temp_dir, "audio.mp3")
+        download_file(audio_url.strip(), audio_path)
+        
+        # 2. Separar los enlaces de los videos por comas y descargarlos en automático
+        lista_urls = [url.strip() for url in video_urls.split(",") if url.strip()]
+        video_files = []
+        
+        for i, url in enumerate(lista_urls):
+            video_path = os.path.join(temp_dir, f"video_{i}.mp4")
+            download_file(url, video_path)
+            video_files.append(video_path)
 
         if not video_files:
             return JSONResponse(status_code=400, content={"error": "No se descargaron clips de video"})
