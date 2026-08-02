@@ -42,36 +42,34 @@ def transcode():
                 f.write(chunk)
 
         output_video = "output_final.mp4"
-
-        # Comando FFmpeg ultra-compatible que reescala y fuerza streams universales
-        print("Procesando con FFmpeg...")
-        ffmpeg_cmd = (
-            "ffmpeg -y -i input_video.mp4 -i input_audio.mp3 "
-            "-c:v libx264 -preset ultrafast -crf 23 "
-            "-c:a aac -b:a 192k "
-            "-shortest output_final.mp4"
-        )
-
-        result = subprocess.run(ffmpeg_cmd, shell=True, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            print(f"Error crítico en FFmpeg: {result.stderr}")
-            return jsonify({"error": "Error interno en FFmpeg", "details": result.stderr}), 500
-
         print("¡Video procesado con éxito!")
 
-        # Notificar al Webhook de n8n (nodo Wait)
+        # Subir el video resultante a Catbox para obtener un enlace público descargable
+        downloaded_url = ""
+        try:
+            with open(output_video, "rb") as f:
+                res = requests.post(
+                    "https://catbox.moe/user/api.php",
+                    data={"reqtype": "fileupload", "userhash": ""},
+                    files={"fileToUpload": f}
+                )
+                if res.status_code == 200:
+                    downloaded_url = res.text.strip()
+                    print(f"Video subido correctamente: {downloaded_url}")
+        except Exception as e:
+            print(f"Error al subir el video: {str(e)}")
+
+        # Notificar al Webhook de n8n con el enlace real
         if webhook_url:
             try:
-                requests.post(webhook_url, json={"status": "completed", "video": output_video})
+                requests.post(webhook_url, json={
+                    "status": "completed", 
+                    "video": downloaded_url
+                })
             except Exception as e:
                 print(f"Error al notificar el webhook: {str(e)}")
 
-        return jsonify({"status": "success", "message": "Proceso finalizado correctamente"}), 200
-
-    except Exception as e:
-        print(f"Excepción general: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "success", "video_url": downloaded_url}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
