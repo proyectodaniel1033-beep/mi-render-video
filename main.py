@@ -2,8 +2,8 @@ import os
 import subprocess
 import tempfile
 import requests
-from fastapi import FastAPI, Form
-from fastapi.responses import JSONResponse
+from typing import List
+from fastapi import FastAPI, Form, File, UploadFile
 
 app = FastAPI()
 
@@ -28,38 +28,15 @@ def upload_to_catbox(file_path: str) -> str:
 
 @app.post("/transcode")
 async def transcode_video(
-    audio_url: str = Form(...),   # URL del audio alojado en Catbox
-    video_urls: str = Form(...)   # URLs de los videos de Pexels
+    audio_url: str = Form(...),
+    video_urls: List[str] = Form(...)  # Recibe múltiples URLs como una lista
 ):
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # 1. Descargar el archivo de audio de Catbox
-        audio_path = os.path.join(temp_dir, "audio.mp3")
-        download_file(audio_url.strip(), audio_path)
-
-        # 2. Calcular la duración exacta del audio con ffprobe
-        probe_cmd = [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            audio_path
-        ]
-        try:
-            duration_str = subprocess.check_output(probe_cmd).decode("utf-8").strip()
-            audio_duration = float(duration_str)
-        except Exception:
-            audio_duration = 120.0
-
-        # 3. Descargar los clips de video de Pexels
-        urls = [u.strip().strip('"\'') for u in video_urls.replace("[", "").replace("]", "").split(",") if u.strip()]
-        
-        video_files = []
-        for i, url in enumerate(urls):
-            v_path = os.path.join(temp_dir, f"pexels_{i}.mp4")
-            try:
-                download_file(url, v_path)
-                video_files.append(v_path)
-            except Exception:
-                continue
+    # Tu código para iterar sobre los videos y descargarlos:
+    for i, url in enumerate(video_urls):
+        video_path = os.path.join(temp_dir, f"video_{i}.mp4")
+        download_file(url.strip(), video_path)
+    
+    # Resto de tu lógica con FFmpeg...
 
         if not video_files:
             return JSONResponse(status_code=400, content={"error": "No se descargaron clips de video"})
