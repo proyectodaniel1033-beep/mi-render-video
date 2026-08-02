@@ -1,122 +1,97 @@
 import os
 import subprocess
+import tempfile
 import requests
-from flask import Flask, request, jsonify
-import json
+from fastapi import FastAPI, Form
+from fastapi.responses import JSONResponse
 
-app = Flask(__name__)
+app = FastAPI()
 
-@app.route('/transcode', methods=['POST'])
-def transcode():
-    # 1. Verificar que llegue el audio local de la IA
-    if 'audio' not in request.files:
-        return jsonify({"error": "No audio file provided"}), 400
+def download_file(url: str, dest_path: str):
+    res = requests.get(url, stream=True)
+    if res.status_code == 200:
+        with open(dest_path, "wb") as f:
+            for chunk in res.iter_content(chunk_size=8192):
+                f.write(chunk)
+    else:
+        raise Exception(f"No se pudo descargar el archivo desde {url}")
 
-    audio_file = request.files['audio']
-    input_audio = "input_audio.mp3"
-    audio_file.save(input_audio)
+def upload_to_catbox(file_path: str) -> str:
+    url = "https://catbox.moe/user/api.php"
+    with open(file_path, "rb") as f:
+        files = {"fileToUpload": f}
+        data = {"reqtype": "fileupload"}
+        response = requests.post(url, data=data, files=files)
+    if response.status_code == 200:
+        return response.text.strip()
+    raise Exception(f"Error al subir el video final: {response.text}")
 
-    # 2. Recibir las URLs de los videos de stock enviadas por n8n (desde el Aggregate)
-    video_urls_raw = request.form.get("video_urls", "[]")
-    webhook_url = request.form.get("webhook_url")
+@app.post("/transcode")
+async def transcode_video(
+    audio_url: str = Form(...),   # URL del audio alojado en Catbox
+    video_urls: str = Form(...)   # URLs de los videos de Pexels
+):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # 1. Descargar el archivo de audio de Catbox
+        audio_path = os.path.join(temp_dir, "audio.mp3")
+        download_file(audio_url.strip(), audio_path)
 
-    try:
-        video_urls = json.loads(video_urls_raw)
-    except:
-        video_urls = [video_urls_raw] if video_urls_raw else []
+        # 2. Calcular la duración exacta del audio con ffprobe
+        probe_cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            audio_path
+        ]
+        try:
+            duration_str = subprocess.check_output(probe_cmd).decode("utf-8").strip()
+            audio_duration = float(duration_str)
+        except Exception:
+            audio_duration = 120.0
 
-    if not video_urls:
-        return jsonify({"error": "Missing video_urls"}), 400
-
-    output_video = "output_final.mp4"
-
-    try:
-        # 3. Descargar cada uno de los clips de video cortos
+        # 3. Descargar los clips de video de Pexels
+        urls = [u.strip().strip('"\'') for u in video_urls.replace("[", "").replace("]", "").split(",") if u.strip()]
+        
         video_files = []
-        for i, url in enumerate(video_urls):
-            v_name = f"video_part_{i}.mp4"
+        for i, url in enumerate(urls):
+            v_path = os.path.join(temp_dir, f"pexels_{i}.mp4")
             try:
-                vid_res = requests.get(url, stream=True, timeout=15)
-                if vid_res.status_code == 200:
-                    with open(v_name, "wb") as f:
-                        for chunk in vid_res.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                    video_files.append(v_name)
-            except Exception as e:
-                print(f"No se pudo descargar el video {i}: {str(e)}")
+                download_file(url, v_path)
+                video_files.append(v_path)
+            except Exception:
+                continue
 
         if not video_files:
-            return jsonify({"error": "Failed to download any video parts"}), 400
+            return JSONResponse(status_code=400, content={"error": "No se descargaron clips de video"})
 
-        # 4. Crear archivo de lista para FFmpeg con bucle integrado
-        # Repetimos la secuencia de clips varias veces (ej. 5 veces) para asegurar que superen los 2 minutos
-        list_filename = "file_list.txt"
-        with open(list_filename, "w") as f:
-            for _ in range(5): 
-                for v_name in video_files:
-                    f.write(f"file '{v_name}'\n")
+        # 4. Concatenar los clips de Pexels
+        list_file_path = os.path.join(temp_dir, "file_list.txt")
+        with open(list_file_path, "w") as f:
+            for v_path in video_files:
+                f.write(f"file '{v_path}'\n")
 
-        # 5. Unir los videos en un video base continuo
-        combined_video = "combined_video.mp4"
-        concat_command = [
-            "ffmpeg", "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", list_filename,
-            "-c", "copy",
-            combined_video
+        concatenated_path = os.path.join(temp_dir, "concatenated.mp4")
+        concat_cmd = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", list_file_path, "-c", "copy", concatenated_path
         ]
-        subprocess.run(concat_command, check=True)
+        subprocess.run(concat_cmd, check=True)
 
-        # 6. Sincronizar el video largo con tu audio local y forzar el corte exacto con -shortest
-        final_command = [
+        # 5. Renderizado final: Bucle de video sincronizado a la duración exacta del audio
+        output_video_path = os.path.join(temp_dir, "output_final.mp4")
+        ffmpeg_cmd = [
             "ffmpeg", "-y",
-            "-i", combined_video,
-            "-i", input_audio,
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
+            "-stream_loop", "-1",
+            "-i", concatenated_path,
+            "-i", audio_path,
+            "-t", str(audio_duration),
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
             "-c:a", "aac",
-            "-shortest",  # Corta de forma estricta justo al terminar tu audio local
-            "-pix_fmt", "yuv420p",
-            output_video
+            "-shortest",
+            output_video_path
         ]
-        
-        result = subprocess.run(final_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        
-        if result.returncode != 0:
-            print(f"Error FFmpeg: {result.stderr}")
-            return jsonify({"error": "FFmpeg failed", "details": result.stderr}), 500
+        subprocess.run(ffmpeg_cmd, check=True)
 
-        print("¡Video largo generado y sincronizado con éxito!")
-
-        # 7. Subir el resultado final a Catbox
-        downloaded_url = ""
-        try:
-            with open(output_video, "rb") as f:
-                res = requests.post(
-                    "https://catbox.moe/user/api.php",
-                    data={"reqtype": "fileupload", "userhash": ""},
-                    files={"fileToUpload": f}
-                )
-                if res.status_code == 200:
-                    downloaded_url = res.text.strip()
-                    print(f"Subido a Catbox: {downloaded_url}")
-        except Exception as e:
-            print(f"Error al subir: {str(e)}")
-
-        # 8. Notificar a n8n si hay webhook
-        if webhook_url:
-            try:
-                requests.post(webhook_url, json={"status": "completed", "video": downloaded_url})
-            except:
-                pass
-
-        return jsonify({"status": "success", "video_url": downloaded_url}), 200
-
-    except Exception as e:
-        print(f"Error general: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+        # 6. Subir el resultado y retornar JSON limpio
+        final_url = upload_to_catbox(output_video_path)
+        return {"status": "success", "video_url": final_url}
