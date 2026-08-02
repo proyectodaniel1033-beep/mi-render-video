@@ -34,8 +34,8 @@ def upload_to_catbox(file_path: str) -> str:
 
 @app.post("/transcode")
 async def transcode_video(
-    audio_url: str = Form(...),  # Recibe el enlace de Catbox para el audio
-    video_urls: str = Form(...)  # Recibe la lista de enlaces de Pexels separados por comas
+    audio_url: str = Form(...),  # Enlace de Catbox para el audio
+    video_urls: str = Form(...)  # Lista de Pexels separada por comas
 ):
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
