@@ -5,6 +5,10 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({"status": "online", "message": "Microservicio FFmpeg activo"})
+
 @app.route('/transcode', methods=['POST'])
 def transcode():
     data = request.json
@@ -41,7 +45,6 @@ def transcode():
             f.write(f"file '{file}'\n")
 
     # 4. Unir los videos y añadir el audio con FFmpeg
-    # -shortest hace que el video final termine cuando acabe el audio o cumpla la duración requerida
     output_video = "output_final.mp4"
     ffmpeg_cmd = (
         f"ffmpeg -f concat -safe 0 -i mylist.txt -i '{audio_url}' "
