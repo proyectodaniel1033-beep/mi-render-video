@@ -7,9 +7,14 @@ from fastapi.responses import FileResponse
 app = FastAPI()
 
 # Headers para evitar bloqueos de descarga en servidores externos (ej. Catbox)
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 }
+
+# Descarga segura del audio local de Catbox
+audio_response = requests.get(audio_url, headers=headers)
+with open('/tmp/media/audio.mp3', 'wb') as f:
+    f.write(audio_response.content)
 
 @app.post("/transcode")
 async def transcode_video(audio_url: str = Form(...), video_urls: str = Form(...)):
