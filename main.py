@@ -1,89 +1,80 @@
 import os
 import subprocess
-import tempfile
-from typing import List
 import requests
 from fastapi import FastAPI, Form, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse
 
 app = FastAPI()
 
-def download_file(url: str, dest_path: str):
-    """Descarga un archivo desde una URL de forma segura."""
-    try:
-        response = requests.get(url, stream=True, timeout=30)
-        if response.status_code == 200:
-            with open(dest_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        else:
-            raise Exception(f"Error HTTP {response.status_code} al descargar desde {url}")
-    except Exception as e:
-        raise Exception(f"No se pudo descargar el archivo desde {url}: {str(e)}")
-
-def upload_to_catbox(file_path: str) -> str:
-    """Sube el archivo de video final de vuelta a Catbox."""
-    url = "https://catbox.moe/user/api.php"
-    with open(file_path, "rb") as f:
-        files = {"fileToUpload": f}
-        data = {"reqtype": "fileupload"}
-        response = requests.post(url, data=data, files=files)
-    if response.status_code == 200:
-        return response.text.strip()
-    raise Exception(f"Error al subir el video final: {response.text}")
+# Headers para evitar bloqueo de descarga (ej. Catbox)
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+}
 
 @app.post("/transcode")
-async def transcode_video(
-    audio_url: str = Form(...),  # Enlace de Catbox para el audio
-    video_urls: str = Form(...)  # Lista de Pexels separada por comas
-):
+async def transcode_video(audio_url: str = Form(...), video_urls: str = Form(...)):
+    """
+    Recibe la URL del audio de Catbox y una lista/cadena de URLs de Pexels.
+    Descarga los recursos, los procesa con FFmpeg y genera un video final.
+    """
     try:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # 1. Descargar el archivo de audio de Catbox
-            audio_path = os.path.join(temp_dir, "audio.mp3")
-            download_file(audio_url.strip(), audio_path)
-            
-            # 2. Separar los enlaces de los videos de Pexels por comas y descargarlos en automático
-            lista_urls = [url.strip() for url in video_urls.split(",") if url.strip()]
-            
-            if not lista_urls:
-                return JSONResponse(status_code=400, content={"error": "No se recibieron URLs de video válidas."})
-            
-            video_files = []
-            for i, url in enumerate(lista_urls):
-                video_path = os.path.join(temp_dir, f"video_{i}.mp4")
-                download_file(url, video_path)
-                video_files.append(video_path)
-            
-            # 3. Crear el archivo de lista para FFmpeg (concatenación de clips)
-            list_file_path = os.path.join(temp_dir, "file_list.txt")
-            with open(list_file_path, "w") as f:
-                for v_path in video_files:
-                    # FFmpeg requiere escapar las rutas correctamente
-                    f.write(f"file '{v_path}'\n")
-            
-            concatenated_path = os.path.join(temp_dir, "concatenated.mp4")
-            
-            # 4. Unir los clips de video usando FFmpeg
-            concat_cmd = [
-                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                "-i", list_file_path, "-c", "copy", concatenated_path
-            ]
-            subprocess.run(concat_cmd, check=True)
-            
-            # 5. Combinar el video unido con el audio de Catbox
-            output_path = os.path.join(temp_dir, "output_final.mp4")
-            final_cmd = [
-                "ffmpeg", "-y", "-i", concatenated_path, "-i", audio_path,
-                "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
-                "-shortest", output_path
-            ]
-            subprocess.run(final_cmd, check=True)
-            
-            # 6. Subir el resultado final de regreso a Catbox (o el servicio configurado) para n8n
-            final_url = upload_to_catbox(output_path)
-            
-            return {"enlace_video_final": final_url}
+        # 1. Preparar directorios temporales
+        os.makedirs("/tmp/media", exist_ok=True)
+        
+        # Parsear las URLs de los videos (asumiendo que llegan separadas por coma o como texto)
+        urls_list = [v.strip() for v in video_urls.split(",") if v.strip()]
+        
+        if not urls_list:
+            raise HTTPException(status_code=400, detail="No se proporcionaron URLs de video.")
+
+        # 2. Descargar el archivo de audio de Catbox de forma segura
+        audio_path = "/tmp/media/audio.mp3"
+        audio_res = requests.get(audio_url, headers=HEADERS, stream=True)
+        if audio_res.status_code != 200:
+            raise HTTPException(status_code=400, detail=f"No se pudo descargar el audio desde Catbox: {audio_res.status_code}")
+        
+        with open(audio_path, "wb") as f:
+            for chunk in audio_res.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        # 3. Descargar cada clip de video de Pexels
+        video_files = []
+        for i, v_url in enumerate(urls_list):
+            v_path = f"/tmp/media/video_{i}.mp4"
+            v_res = requests.get(v_url, headers=HEADERS, stream=True)
+            if v_res.status_code == 200:
+                with open(v_path, "wb") as f:
+                    for chunk in v_res.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                video_files.append(v_path)
+
+        if not video_files:
+            raise HTTPException(status_code=400, detail="No se pudo descargar ningún video de Pexels.")
+
+        # 4. Crear archivo de lista para concatenar con FFmpeg
+        concat_list_path = "/tmp/media/concat_list.txt"
+        with open(concat_list_path, "w") as f:
+            for v_path in video_files:
+                f.write(f"file '{v_path}'\n")
+
+        # 5. Procesar con FFmpeg (Concat videos + Ajustar al audio / duracion aprox)
+        output_video_path = "/tmp/media/output_final.mp4"
+        
+        # Comando para concatenar videos y sincronizar con el audio de fondo
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0", "-i", concat_list_path,
+            "-i", audio_path,
+            "-c:v", "libx264", "-preset", "fast",
+            "-c:a", "aac", "-b:a", "192k",
+            "-shortest",  # Ajusta la duración total al tamaño del audio
+            output_video_path
+        ]
+        
+        subprocess.run(ffmpeg_cmd, check=True)
+
+        # 6. Retornar el archivo de video resultante hacia n8n
+        return FileResponse(output_video_path, media_type="video/mp4", filename="final_video.mp4")
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
