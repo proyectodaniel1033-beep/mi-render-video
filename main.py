@@ -3,32 +3,40 @@ import subprocess
 import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 app = FastAPI()
 
 class VideoRequest(BaseModel):
-    audio_url: str
-    videos: List[str]
+    audio_url: Optional[str] = None
+    videos: Optional[List[str]] = None
+    # Por si n8n manda las variables con otro nombre secundario
+    url: Optional[str] = None 
 
 @app.post("/transcode")
 def transcode_video(data: VideoRequest):
     try:
-        os.makedirs("/tmp/media", exist_ok=True)
+        # Aceptar audio_url o url genérica
+        final_audio_url = data.audio_url or data.url
+        if not final_audio_url:
+            raise HTTPException(status_code=422, detail="Falta la URL del audio en la petición.")
         
-        # 1. Cabecera para evitar que Catbox rechace la descarga por seguridad
+        if not data.videos or len(data.videos) == 0:
+            raise HTTPException(status_code=422, detail="La lista de videos está vacía.")
+
+        os.makedirs("/tmp/media", exist_ok=True)
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         
-        # 2. Descargar audio de Catbox
-        audio_res = requests.get(data.audio_url, headers=headers)
+        # 1. Descargar audio
+        audio_res = requests.get(final_audio_url, headers=headers)
         if audio_res.status_code != 200:
-            raise HTTPException(status_code=400, detail="No se pudo descargar el audio de Catbox.")
+            raise HTTPException(status_code=400, detail="No se pudo descargar el audio.")
         
         audio_path = "/tmp/media/audio.mp3"
         with open(audio_path, "wb") as f:
             f.write(audio_res.content)
 
-        # 3. Descargar videos de Pexels uno por uno
+        # 2. Descargar videos
         video_files = []
         for i, v_url in enumerate(data.videos):
             v_res = requests.get(v_url, headers=headers)
@@ -39,15 +47,15 @@ def transcode_video(data: VideoRequest):
                 video_files.append(v_path)
 
         if not video_files:
-            raise HTTPException(status_code=400, detail="No se pudo descargar ningún video de Pexels.")
+            raise HTTPException(status_code=400, detail="No se pudo descargar ningún video.")
 
-        # 4. Crear archivo de lista para FFmpeg
+        # 3. Crear lista para FFmpeg
         concat_list_path = "/tmp/media/concat_list.txt"
         with open(concat_list_path, "w") as f:
             for v_path in video_files:
                 f.write(f"file '{v_path}'\n")
 
-        # 5. Ejecutar FFmpeg para unir videos y recortar al tamaño del audio (~2 min)
+        # 4. Procesar video final
         output_path = "/tmp/media/output_final.mp4"
         command = [
             "ffmpeg", "-y",
