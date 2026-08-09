@@ -38,16 +38,16 @@ async def transcode_video(data: VideoRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Fallo en descarga de audio.")
 
-    # 2. Descarga de videos con respaldo inteligente
+    # 2. Descarga de videos múltiples y variados
     urls_a_probar = data.videos if data.videos else []
     fallback_video = "https://www.w3schools.com/html/mov_bbb.mp4"
     
     video_files = []
     
-    # Intentar descargar los videos proporcionados
+    # Intentar descargar todos los videos variados que envió n8n
     for i, v_url in enumerate(urls_a_probar):
         try:
-            print(f"Intentando descargar video: {v_url}")
+            print(f"Intentando descargar video {i}: {v_url}")
             v_res = requests.get(v_url, headers=headers, timeout=10, stream=True)
             if v_res.status_code == 200:
                 v_path = f"/tmp/media/video_{i}.mp4"
@@ -59,7 +59,7 @@ async def transcode_video(data: VideoRequest):
         except Exception:
             continue
 
-    # SI PEXELS FALLÓ O NO TRAJO NADA, USAMOS EL VIDEO DE RESPALDO OBLIGATORIAMENTE
+    # Si Pexels no trajo nada, usamos el respaldo como última opción
     if not video_files:
         print("Pexels no devolvió clips válidos, usando video de respaldo...")
         try:
@@ -77,11 +77,15 @@ async def transcode_video(data: VideoRequest):
     if not video_files:
         raise HTTPException(status_code=400, detail="No se pudo procesar ningún clip de video.")
 
-    # --- BUCLE INTELIGENTE PARA ASEGURAR LOS 2 MINUTOS ---
+    # --- BUCLE INTELIGENTE PARA SECUENCIA VARIADA DE 2 MINUTOS ---
+    # Esto extiende la lista alternando los clips descargados hasta tener al menos 12 fragmentos diferentes en secuencia
     original_videos = video_files.copy()
     while len(video_files) < 12 and len(original_videos) > 0:
-        video_files.extend(original_videos)
-    # ---------------------------------------------------
+        for v in original_videos:
+            if len(video_files) >= 12:
+                break
+            video_files.append(v)
+    # -----------------------------------------------------------
 
     # 3. Crear lista para FFmpeg
     concat_list_path = "/tmp/media/concat_list.txt"
