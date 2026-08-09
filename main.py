@@ -22,11 +22,18 @@ async def transcode_video(data: VideoRequest):
 
     os.makedirs("/tmp/media", exist_ok=True)
     
-    # 1. Descargar audio de GitHub (que ya sabemos que funciona)
+    # Headers genéricos de navegador para evitar bloqueos 403 en Pexels y GitHub
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+        'Referer': 'https://www.pexels.com/'
+    }
+    
+    # 1. Descargar audio de GitHub
     audio_path = "/tmp/media/audio.mp3"
     try:
-        audio_headers = {'User-Agent': 'Mozilla/5.0'}
-        audio_res = requests.get(data.audio_url, headers=audio_headers, timeout=30)
+        audio_res = requests.get(data.audio_url, headers=headers, timeout=30)
         print(f"DEBUG AUDIO: Status {audio_res.status_code}, Bytes: {len(audio_res.content)}")
         if audio_res.status_code != 200:
             raise HTTPException(status_code=400, detail="Error al descargar audio de GitHub")
@@ -36,20 +43,12 @@ async def transcode_video(data: VideoRequest):
         print(f"EXCEPCIÓN AUDIO: {str(e)}")
         raise HTTPException(status_code=400, detail="Fallo en descarga de audio.")
 
-    # 2. Descargar clips de video de Pexels CON TU TOKEN DE API
-    # REEMPLAZA 'TU_API_KEY_DE_PEXELS' por la misma clave que usas en el nodo Pexels de n8n
-    PEXELS_API_KEY = "7MG2eewyLnfL5DSATmFDQJ144nSx40aIZlZ9KZCrnetbJAhd5jTM"
-
-    video_headers = {
-        'User-Agent': 'Mozilla/5.0',
-        'Authorization': PEXELS_API_KEY
-}
-
+    # 2. Descargar clips de video de Pexels (Sin token de API para evitar el error 403)
     video_files = []
     for i, v_url in enumerate(data.videos[:5]):
         try:
             print(f"Descargando video {i}: {v_url}")
-            v_res = requests.get(v_url, headers=video_headers, timeout=25, stream=True)
+            v_res = requests.get(v_url, headers=headers, timeout=25, stream=True)
             print(f"DEBUG VIDEO {i}: Status {v_res.status_code}")
             
             if v_res.status_code == 200:
