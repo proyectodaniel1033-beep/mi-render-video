@@ -2,6 +2,7 @@ import os
 import subprocess
 import requests
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -37,7 +38,7 @@ async def transcode_video(data: VideoRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Fallo en descarga de audio.")
 
-    # 2. Descarga de videos blindada (Si falla Pexels, usa un video de respaldo libre y seguro)
+    # 2. Descarga de videos blindada con respaldo
     fallback_video = "https://www.w3schools.com/html/mov_bbb.mp4"
     urls_a_probar = data.videos if data.videos else []
     urls_a_probar.append(fallback_video)
@@ -54,7 +55,7 @@ async def transcode_video(data: VideoRequest):
                         if chunk:
                             f.write(chunk)
                 video_files.append(v_path)
-                break # Si descarga al menos uno con éxito, podemos continuar
+                break 
         except Exception:
             continue
 
@@ -85,4 +86,5 @@ async def transcode_video(data: VideoRequest):
         print(f"FFMPEG ERROR: {result.stderr}")
         raise HTTPException(status_code=500, detail="Error en FFmpeg.")
 
-    return {"message": "Video generado con éxito", "url_archivo": "output_final.mp4"}
+    # 5. Devolver el archivo binario directamente para que n8n lo pase a YouTube
+    return FileResponse(output_path, media_type="video/mp4", filename="conejo_millonario.mp4")
