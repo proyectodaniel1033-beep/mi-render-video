@@ -36,10 +36,11 @@ async def transcode_video(data: VideoRequest):
         with open(audio_path, "wb") as f:
             f.write(audio_res.content)
     except Exception as e:
+        print(f"Error descargando audio: {str(e)}")
         raise HTTPException(status_code=400, detail="Fallo en descarga de audio.")
 
-    # 2. Descarga optimizada (Limitada a máximo 6 clips para no saturar la RAM de Render)
-    urls_a_probar = data.videos[:6] if data.videos else []
+    # 2. Descarga optimizada y limitada para cuidar la RAM de Render
+    urls_a_probar = data.videos[:4] if data.videos else []
     fallback_video = "https://www.w3schools.com/html/mov_bbb.mp4"
     
     video_files = []
@@ -55,7 +56,8 @@ async def transcode_video(data: VideoRequest):
                         if chunk:
                             f.write(chunk)
                 video_files.append(v_path)
-        except Exception:
+        except Exception as err:
+            print(f"Fallo descargando clip {i}: {str(err)}")
             continue
 
     if not video_files:
@@ -63,26 +65,26 @@ async def transcode_video(data: VideoRequest):
         try:
             v_res = requests.get(fallback_video, headers=headers, timeout=15, stream=True)
             if v_res.status_code == 200:
-                v_path = f"/tmp/media/fallback_video.mp4"
+                v_path = "/tmp/media/fallback_video.mp4"
                 with open(v_path, "wb") as f:
                     for chunk in v_res.iter_content(chunk_size=16384):
                         if chunk:
                             f.write(chunk)
                 video_files.append(v_path)
-        except Exception:
-            pass
+        except Exception as err:
+            print(f"Fallo respaldo: {str(err)}")
 
     if not video_files:
         raise HTTPException(status_code=400, detail="No se pudo procesar ningún clip de video.")
 
-    # --- BUCLE EFICIENTE PARA LOS 2 MINUTOS SIN SATURAR ---
+    # --- BUCLE EFICIENTE PARA LOS 2 MINUTOS ---
     original_videos = video_files.copy()
-    while len(video_files) < 10 and len(original_videos) > 0:
+    while len(video_files) < 8 and len(original_videos) > 0:
         for v in original_videos:
-            if len(video_files) >= 10:
+            if len(video_files) >= 8:
                 break
             video_files.append(v)
-    # -----------------------------------------------------
+    # ------------------------------------------
 
     # 3. Crear lista para FFmpeg
     concat_list_path = "/tmp/media/concat_list.txt"
@@ -90,22 +92,25 @@ async def transcode_video(data: VideoRequest):
         for v_path in video_files:
             f.write(f"file '{v_path}'\n")
 
-    # 4. Procesar con FFmpeg optimizado
+    # 4. Procesar con FFmpeg en modo ultra ligero (Cero sobrecarga de RAM)
     output_path = "/tmp/media/output_final.mp4"
     command = [
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0", "-i", concat_list_path,
         "-i", audio_path,
-        "-c:v", "libx264", "-preset", "ultrafast",  # Preset ultrarrápido para evitar timeout en Render
-        "-c:a", "aac", "-b:a", "128k",
-        "-shortest", "-pix_fmt", "yuv420p",
+        "-c:v", "copy",          # Evita transcodificación pesada y protege la memoria de Render
+        "-c:a", "aac",           # Re-codifica el audio de forma limpia
+        "-b:a", "128k",
+        "-shortest",
         output_path
     ]
     
+    print("Ejecutando FFmpeg...")
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     
     if result.returncode != 0:
         print(f"FFMPEG ERROR: {result.stderr}")
-        raise HTTPException(status_code=500, detail="Error en FFmpeg.")
+        raise HTTPException(status_code=500, detail=f"Error en FFmpeg: {result.stderr}")
 
+    print("Renderizado completado con éxito.")
     return FileResponse(output_path, media_type="video/mp4", filename="conejo_millonario.mp4")
