@@ -38,54 +38,51 @@ async def transcode_video(data: VideoRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Fallo en descarga de audio.")
 
-    # 2. Descarga de videos múltiples y variados
-    urls_a_probar = data.videos if data.videos else []
+    # 2. Descarga optimizada (Limitada a máximo 6 clips para no saturar la RAM de Render)
+    urls_a_probar = data.videos[:6] if data.videos else []
     fallback_video = "https://www.w3schools.com/html/mov_bbb.mp4"
     
     video_files = []
     
-    # Intentar descargar todos los videos variados que envió n8n
     for i, v_url in enumerate(urls_a_probar):
         try:
-            print(f"Intentando descargar video {i}: {v_url}")
+            print(f"Descargando clip {i}: {v_url}")
             v_res = requests.get(v_url, headers=headers, timeout=10, stream=True)
             if v_res.status_code == 200:
                 v_path = f"/tmp/media/video_{i}.mp4"
                 with open(v_path, "wb") as f:
-                    for chunk in v_res.iter_content(chunk_size=8192):
+                    for chunk in v_res.iter_content(chunk_size=16384):
                         if chunk:
                             f.write(chunk)
                 video_files.append(v_path)
         except Exception:
             continue
 
-    # Si Pexels no trajo nada, usamos el respaldo como última opción
     if not video_files:
-        print("Pexels no devolvió clips válidos, usando video de respaldo...")
+        print("Usando video de respaldo...")
         try:
             v_res = requests.get(fallback_video, headers=headers, timeout=15, stream=True)
             if v_res.status_code == 200:
                 v_path = "/tmp/media/fallback_video.mp4"
                 with open(v_path, "wb") as f:
-                    for chunk in v_res.iter_content(chunk_size=8192):
+                    for chunk in v_res.iter_content(chunk_size=16384):
                         if chunk:
                             f.write(chunk)
                 video_files.append(v_path)
-        except Exception as e:
-            print(f"Error descargando respaldo: {str(e)}")
+        except Exception:
+            pass
 
     if not video_files:
         raise HTTPException(status_code=400, detail="No se pudo procesar ningún clip de video.")
 
-    # --- BUCLE INTELIGENTE PARA SECUENCIA VARIADA DE 2 MINUTOS ---
-    # Esto extiende la lista alternando los clips descargados hasta tener al menos 12 fragmentos diferentes en secuencia
+    # --- BUCLE EFICIENTE PARA LOS 2 MINUTOS SIN SATURAR ---
     original_videos = video_files.copy()
-    while len(video_files) < 12 and len(original_videos) > 0:
+    while len(video_files) < 10 and len(original_videos) > 0:
         for v in original_videos:
-            if len(video_files) >= 12:
+            if len(video_files) >= 10:
                 break
             video_files.append(v)
-    # -----------------------------------------------------------
+    # -----------------------------------------------------
 
     # 3. Crear lista para FFmpeg
     concat_list_path = "/tmp/media/concat_list.txt"
@@ -93,13 +90,13 @@ async def transcode_video(data: VideoRequest):
         for v_path in video_files:
             f.write(f"file '{v_path}'\n")
 
-    # 4. Procesar con FFmpeg (se detendrá exactamente cuando acabe tu audio de 2 minutos)
+    # 4. Procesar con FFmpeg
     output_path = "/tmp/media/output_final.mp4"
     command = [
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0", "-i", concat_list_path,
         "-i", audio_path,
-        "-c:v", "libx264", "-preset", "veryfast",
+        "-c:v", "libx264", "-preset", "ultrafast",  # Preset ultrarrápido para evitar timeout en Render
         "-c:a", "aac", "-b:a", "128k",
         "-shortest", "-pix_fmt", "yuv420p",
         output_path
@@ -111,5 +108,4 @@ async def transcode_video(data: VideoRequest):
         print(f"FFMPEG ERROR: {result.stderr}")
         raise HTTPException(status_code=500, detail="Error en FFmpeg.")
 
-    # 5. Devolver el archivo binario final
     return FileResponse(output_path, media_type="video/mp4", filename="conejo_millonario.mp4")
