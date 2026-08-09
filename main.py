@@ -13,9 +13,17 @@ class VideoRequest(BaseModel):
 
 @app.post("/transcode")
 async def transcode_video(data: VideoRequest):
+    # --- DEPURACIÓN: Esto imprimirá exactamente qué recibe Render en los logs ---
+    print(f"--- JSON RECIBIDO DE N8N ---")
+    print(data.dict())
+    print(f"----------------------------")
+    # ----------------------------------------------------------------------------
+
     # Validar datos básicos
     if not data.audio_url or not data.videos:
-        raise HTTPException(status_code=422, detail="Faltan datos: se requiere 'audio_url' y una lista de 'videos'.")
+        raise HTTPException(status_code=422, detail="Faltan datos requeridos.")
+    
+    # ... resto de tu código ....")
 
     os.makedirs("/tmp/media", exist_ok=True)
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
