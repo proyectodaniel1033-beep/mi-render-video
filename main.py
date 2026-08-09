@@ -22,22 +22,20 @@ async def transcode_video(data: VideoRequest):
     # Validar datos básicos
     if not data.audio_url or not data.videos:
         raise HTTPException(status_code=422, detail="Faltan datos requeridos.")
-    
-    # ... resto de tu código ....")
 
     os.makedirs("/tmp/media", exist_ok=True)
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     
-    # 1. Descargar audio con validación
+    # 1. Descargar audio de GitHub con validación
     audio_path = "/tmp/media/audio.mp3"
     audio_res = requests.get(data.audio_url, headers=headers, timeout=20)
     if audio_res.status_code != 200 or len(audio_res.content) < 500:
-        raise HTTPException(status_code=400, detail="El audio de Catbox no se descargó correctamente.")
+        raise HTTPException(status_code=400, detail="El audio de GitHub no se descargó correctamente.")
     
     with open(audio_path, "wb") as f:
         f.write(audio_res.content)
 
-    # 2. Descargar clips de video
+    # 2. Descargar clips de video (diferentes temas enviados desde n8n)
     video_files = []
     for i, v_url in enumerate(data.videos[:5]): # Limitamos a 5 clips
         try:
@@ -74,7 +72,6 @@ async def transcode_video(data: VideoRequest):
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     
     if result.returncode != 0:
-        # Imprimir error real en logs de Render para depurar
         print(f"FFMPEG ERROR: {result.stderr}")
         raise HTTPException(status_code=500, detail="Error en el procesamiento de video.")
 
