@@ -63,7 +63,7 @@ async def transcode_video(data: VideoRequest):
         try:
             v_res = requests.get(fallback_video, headers=headers, timeout=15, stream=True)
             if v_res.status_code == 200:
-                v_path = "/tmp/media/fallback_video.mp4"
+                v_path = f"/tmp/media/fallback_video.mp4"
                 with open(v_path, "wb") as f:
                     for chunk in v_res.iter_content(chunk_size=16384):
                         if chunk:
@@ -90,7 +90,7 @@ async def transcode_video(data: VideoRequest):
         for v_path in video_files:
             f.write(f"file '{v_path}'\n")
 
-    # 4. Procesar con FFmpeg
+    # 4. Procesar con FFmpeg optimizado
     output_path = "/tmp/media/output_final.mp4"
     command = [
         "ffmpeg", "-y",
