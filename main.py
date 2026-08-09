@@ -38,15 +38,17 @@ async def transcode_video(data: VideoRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Fallo en descarga de audio.")
 
-    # 2. Descarga de videos
+    # 2. Descarga de videos con respaldo inteligente
     urls_a_probar = data.videos if data.videos else []
+    fallback_video = "https://www.w3schools.com/html/mov_bbb.mp4"
+    
     video_files = []
     
-    # Descargamos todos los videos que envíes en la lista
+    # Intentar descargar los videos proporcionados
     for i, v_url in enumerate(urls_a_probar):
         try:
             print(f"Intentando descargar video: {v_url}")
-            v_res = requests.get(v_url, headers=headers, timeout=15, stream=True)
+            v_res = requests.get(v_url, headers=headers, timeout=10, stream=True)
             if v_res.status_code == 200:
                 v_path = f"/tmp/media/video_{i}.mp4"
                 with open(v_path, "wb") as f:
@@ -57,15 +59,29 @@ async def transcode_video(data: VideoRequest):
         except Exception:
             continue
 
+    # SI PEXELS FALLÓ O NO TRAJO NADA, USAMOS EL VIDEO DE RESPALDO OBLIGATORIAMENTE
+    if not video_files:
+        print("Pexels no devolvió clips válidos, usando video de respaldo...")
+        try:
+            v_res = requests.get(fallback_video, headers=headers, timeout=15, stream=True)
+            if v_res.status_code == 200:
+                v_path = "/tmp/media/fallback_video.mp4"
+                with open(v_path, "wb") as f:
+                    for chunk in v_res.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                video_files.append(v_path)
+        except Exception as e:
+            print(f"Error descargando respaldo: {str(e)}")
+
     if not video_files:
         raise HTTPException(status_code=400, detail="No se pudo procesar ningún clip de video.")
 
-    # --- LÓGICA DE BUCLE PARA 2 MINUTOS ---
+    # --- BUCLE INTELIGENTE PARA ASEGURAR LOS 2 MINUTOS ---
     original_videos = video_files.copy()
-    # Si tenemos pocos clips, repetimos la lista hasta tener al menos 12 fragmentos
     while len(video_files) < 12 and len(original_videos) > 0:
         video_files.extend(original_videos)
-    # --------------------------------------
+    # ---------------------------------------------------
 
     # 3. Crear lista para FFmpeg
     concat_list_path = "/tmp/media/concat_list.txt"
@@ -73,7 +89,7 @@ async def transcode_video(data: VideoRequest):
         for v_path in video_files:
             f.write(f"file '{v_path}'\n")
 
-    # 4. Procesar con FFmpeg
+    # 4. Procesar con FFmpeg (se detendrá exactamente cuando acabe tu audio de 2 minutos)
     output_path = "/tmp/media/output_final.mp4"
     command = [
         "ffmpeg", "-y",
@@ -91,5 +107,5 @@ async def transcode_video(data: VideoRequest):
         print(f"FFMPEG ERROR: {result.stderr}")
         raise HTTPException(status_code=500, detail="Error en FFmpeg.")
 
-    # 5. Devolver el archivo binario
+    # 5. Devolver el archivo binario final
     return FileResponse(output_path, media_type="video/mp4", filename="conejo_millonario.mp4")
