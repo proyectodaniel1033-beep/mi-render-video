@@ -13,31 +13,41 @@ class VideoRequest(BaseModel):
 
 @app.post("/transcode")
 async def transcode_video(data: VideoRequest):
-    # --- DEPURACIÓN: Esto imprimirá exactamente qué recibe Render en los logs ---
     print(f"--- JSON RECIBIDO DE N8N ---")
     print(data.dict())
     print(f"----------------------------")
-    # ----------------------------------------------------------------------------
 
-    # Validar datos básicos
     if not data.audio_url or not data.videos:
         raise HTTPException(status_code=422, detail="Faltan datos requeridos.")
 
     os.makedirs("/tmp/media", exist_ok=True)
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     
-    # 1. Descargar audio de GitHub con validación
+    # Headers completos para engañar a GitHub y permitir la descarga del MP3
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
+    }
+    
+    # 1. Descargar audio de GitHub con manejo de errores detallado
     audio_path = "/tmp/media/audio.mp3"
-    audio_res = requests.get(data.audio_url, headers=headers, timeout=20)
-    if audio_res.status_code != 200 or len(audio_res.content) < 500:
-        raise HTTPException(status_code=400, detail="El audio de GitHub no se descargó correctamente.")
-    
-    with open(audio_path, "wb") as f:
-        f.write(audio_res.content)
+    try:
+        audio_res = requests.get(data.audio_url, headers=headers, timeout=30)
+        print(f"DEBUG AUDIO: Status {audio_res.status_code}, Bytes: {len(audio_res.content)}")
+        
+        if audio_res.status_code != 200:
+            raise HTTPException(status_code=400, detail=f"GitHub respondió con error HTTP {audio_res.status_code}")
+            
+        with open(audio_path, "wb") as f:
+            f.write(audio_res.content)
+            
+    except Exception as e:
+        print(f"EXCEPCIÓN AUDIO: {str(e)}")
+        raise HTTPException(status_code=400, detail="No se pudo conectar con el enlace de GitHub.")
 
-    # 2. Descargar clips de video (diferentes temas enviados desde n8n)
+    # 2. Descargar clips de video de Pexels
     video_files = []
-    for i, v_url in enumerate(data.videos[:5]): # Limitamos a 5 clips
+    for i, v_url in enumerate(data.videos[:5]):
         try:
             v_res = requests.get(v_url, headers=headers, timeout=15)
             if v_res.status_code == 200:
@@ -57,7 +67,7 @@ async def transcode_video(data: VideoRequest):
         for v_path in video_files:
             f.write(f"file '{v_path}'\n")
 
-    # 4. Procesar con FFmpeg (ajustado para mayor compatibilidad)
+    # 4. Procesar con FFmpeg
     output_path = "/tmp/media/output_final.mp4"
     command = [
         "ffmpeg", "-y",
