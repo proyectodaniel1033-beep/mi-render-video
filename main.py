@@ -38,13 +38,12 @@ async def transcode_video(data: VideoRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Fallo en descarga de audio.")
 
-    # 2. Descarga de videos con respaldo
-    fallback_video = "https://www.w3schools.com/html/mov_bbb.mp4"
+    # 2. Descarga de videos
     urls_a_probar = data.videos if data.videos else []
-    urls_a_probar.append(fallback_video)
-
     video_files = []
-    for i, v_url in enumerate(urls_a_probar[:3]):
+    
+    # Descargamos todos los videos que envíes en la lista
+    for i, v_url in enumerate(urls_a_probar):
         try:
             print(f"Intentando descargar video: {v_url}")
             v_res = requests.get(v_url, headers=headers, timeout=15, stream=True)
@@ -55,12 +54,18 @@ async def transcode_video(data: VideoRequest):
                         if chunk:
                             f.write(chunk)
                 video_files.append(v_path)
-                break 
         except Exception:
             continue
 
     if not video_files:
         raise HTTPException(status_code=400, detail="No se pudo procesar ningún clip de video.")
+
+    # --- LÓGICA DE BUCLE PARA 2 MINUTOS ---
+    original_videos = video_files.copy()
+    # Si tenemos pocos clips, repetimos la lista hasta tener al menos 12 fragmentos
+    while len(video_files) < 12 and len(original_videos) > 0:
+        video_files.extend(original_videos)
+    # --------------------------------------
 
     # 3. Crear lista para FFmpeg
     concat_list_path = "/tmp/media/concat_list.txt"
