@@ -14,9 +14,9 @@ class VideoRequest(BaseModel):
 
 @app.post("/transcode")
 async def transcode_video(data: VideoRequest):
-    print(f"--- JSON RECIBIDO DE N8N ---")
+    print("--- JSON RECIBIDO DE N8N ---")
     print(data.dict())
-    print(f"----------------------------")
+    print("----------------------------")
 
     if not data.audio_url:
         raise HTTPException(status_code=422, detail="Falta el audio requerido.")
@@ -38,7 +38,7 @@ async def transcode_video(data: VideoRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Fallo en descarga de audio.")
 
-    # 2. Descarga de videos blindada con respaldo
+    # 2. Descarga de videos con respaldo
     fallback_video = "https://www.w3schools.com/html/mov_bbb.mp4"
     urls_a_probar = data.videos if data.videos else []
     urls_a_probar.append(fallback_video)
@@ -86,5 +86,5 @@ async def transcode_video(data: VideoRequest):
         print(f"FFMPEG ERROR: {result.stderr}")
         raise HTTPException(status_code=500, detail="Error en FFmpeg.")
 
-    # 5. Devolver el archivo binario directamente para que n8n lo pase a YouTube
+    # 5. Devolver el archivo binario
     return FileResponse(output_path, media_type="video/mp4", filename="conejo_millonario.mp4")
