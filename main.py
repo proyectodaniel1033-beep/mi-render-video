@@ -1,112 +1,77 @@
 import os
 import subprocess
-import requests
+import tempfile
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List, Optional
-from gtts import gTTS
+from typing import List
+import requests
 
 app = FastAPI()
 
-class VideoRequest(BaseModel):
-    guion: Optional[str] = None     # Ahora recibimos el texto de la IA directamente
-    videos: Optional[List[str]] = None
+class VideoPayload(BaseModel):
+    urls: List[str]
 
-@app.post("/transcode")
-async def transcode_video(data: VideoRequest):
-    print("--- JSON RECIBIDO DE N8N ---")
-    print(data.dict())
-    print("----------------------------")
+@app.post("/unir-videos")
+def unir_videos(payload: VideoPayload):
+    if not payload.urls:
+        raise HTTPException(status_code=400, detail="No se recibieron URLs de video.")
+    
+    # Creamos un directorio temporal para trabajar limpios en Render
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        lista_txt_path = os.path.join(tmpdirname, "lista.txt")
+        video_paths = []
 
-    if not data.guion:
-        raise HTTPException(status_code=422, detail="Falta el guion requerido para la voz.")
-
-    os.makedirs("/tmp/media", exist_ok=True)
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
-    
-    # 1. Generar el audio de forma interna y gratuita con gTTS
-    audio_path = "/tmp/media/audio.mp3"
-    try:
-        print("Generando audio con gTTS...")
-        tts = gTTS(text=data.guion, lang='es', slow=False)
-        tts.save(audio_path)
-        print("Audio generado exitosamente.")
-    except Exception as e:
-        print(f"Error generando audio: {str(e)}")
-        raise HTTPException(status_code=500, detail="Fallo en la generación interna de audio.")
-
-    # 2. Descarga optimizada de clips de video (Limitada a máximo 6 clips)
-    urls_a_probar = data.videos[:6] if data.videos else []
-    fallback_video = "https://www.w3schools.com/html/mov_bbb.mp4"
-    
-    video_files = []
-    
-    for i, v_url in enumerate(urls_a_probar):
         try:
-            print(f"Descargando clip {i}: {v_url}")
-            v_res = requests.get(v_url, headers=headers, timeout=10, stream=True)
-            if v_res.status_code == 200:
-                v_path = f"/tmp/media/video_{i}.mp4"
-                with open(v_path, "wb") as f:
-                    for chunk in v_res.iter_content(chunk_size=16384):
-                        if chunk:
+            # 1. Descargar cada video de la lista de Pexels
+            for idx, url in enumerate(payload.urls):
+                response = requests.get(url, stream=True)
+                if response.status_code == 200:
+                    video_path = os.path.join(tmpdirname, f"video_{idx}.mp4")
+                    with open(video_path, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
-                video_files.append(v_path)
-        except Exception:
-            continue
+                    video_paths.append(video_path)
+                else:
+                    raise HTTPException(status_code=400, detail=f"No se pudo descargar el video de la URL: {url}")
 
-    if not video_files:
-        print("Usando video de respaldo...")
-        try:
-            v_res = requests.get(fallback_video, headers=headers, timeout=15, stream=True)
-            if v_res.status_code == 200:
-                v_path = "/tmp/media/fallback_video.mp4"
-                with open(v_path, "wb") as f:
-                    for chunk in v_res.iter_content(chunk_size=16384):
-                        if chunk:
-                            f.write(chunk)
-                video_files.append(v_path)
-        except Exception:
-            pass
+            # 2. Crear el archivo de texto que FFmpeg necesita para concatenar
+            with open(lista_txt_path, "w") as f:
+                for path in video_paths:
+                    # Usamos rutas absolutas seguras para FFmpeg
+                    f.write(f"file '{os.path.abspath(path)}'\n")
 
-    if not video_files:
-        raise HTTPException(status_code=400, detail="No se pudo procesar ningún clip de video.")
+            output_video_path = os.path.join(tmpdirname, "salida_final.mp4")
 
-    # --- BUCLE EFICIENTE PARA ALCANZAR LA DURACIÓN ---
-    original_videos = video_files.copy()
-    while len(video_files) < 10 and len(original_videos) > 0:
-        for v in original_videos:
-            if len(video_files) >= 10:
-                break
-            video_files.append(v)
-    # ------------------------------------------------
+            # 3. Comando de FFmpeg para unir y ajustar a 120 segundos (2 minutos)
+            # -t 120 corta o fuerza la duración exacta a 2 minutos
+            comando = [
+                "ffmpeg",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", lista_txt_path,
+                "-t", "120", 
+                "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+                "-c:v", "libx264",
+                "-crf", "23",
+                "-preset", "fast",
+                "-c:a", "aac",
+                output_video_path
+            ]
 
-    # 3. Crear lista para FFmpeg
-    concat_list_path = "/tmp/media/concat_list.txt"
-    with open(concat_list_path, "w") as f:
-        for v_path in video_files:
-            f.write(f"file '{v_path}'\n")
+            # Ejecutar FFmpeg en el sistema operativo de Render
+            resultado = subprocess.run(comando, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            
+            if resultado.returncode != 0:
+                raise HTTPException(status_code=500, detail=f"Error en FFmpeg: {resultado.stderr}")
 
-    # 4. Procesar con FFmpeg optimizado
-    output_path = "/tmp/media/output_final.mp4"
-    command = [
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", concat_list_path,
-        "-i", audio_path,
-        "-c:v", "libx264", "-preset", "ultrafast",
-        "-c:a", "aac", "-b:a", "128k",
-        "-shortest", "-pix_fmt", "yuv420p",
-        output_path
-    ]
-    
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    
-    if result.returncode != 0:
-        print(f"FFMPEG ERROR: {result.stderr}")
-        raise HTTPException(status_code=500, detail="Error en FFmpeg.")
+            # Nota: Aquí puedes agregar código extra para subir tu 'output_video_path' 
+            # a Cloudinary, Google Drive o regresarlo como respuesta.
+            
+            return {
+                "status": "success",
+                "message": "¡Videos unidos y procesados correctamente con FFmpeg!",
+                "duracion_objetivo": "120 segundos"
+            }
 
-    return FileResponse(output_path, media_type="video/mp4", filename="conejo_millonario.mp4")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str.startswith(str(e)))
