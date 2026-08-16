@@ -74,4 +74,4 @@ def unir_videos(payload: VideoPayload):
             }
 
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str.startswith(str(e)))
+            raise HTTPException(status_code=500, detail=str(e))
