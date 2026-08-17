@@ -1,13 +1,20 @@
 import os
 import subprocess
+import tempfile
 from typing import List, Union, Any
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import edge_tts
 
-app = FastAPI(title="Video Renderer Microservice", version="1.0.0")
+app = FastAPI(title="Video y Voz Renderer Microservice", version="1.1.0")
 
 class VideoRequest(BaseModel):
     urls: Union[List[Any], dict, str, None] = None
+
+class VoiceRequest(BaseModel):
+    text: str
+    voice: str = "es-MX-DaliaNeural"
 
 @app.post("/unir-videos")
 async def unir_videos(payload: VideoRequest):
@@ -15,7 +22,6 @@ async def unir_videos(payload: VideoRequest):
         raw_data = payload.urls
         urls_limpias = []
 
-        # Aplanamiento inteligente y robusto para evitar cualquier error 422 o de formato de n8n
         if isinstance(raw_data, list):
             for item in raw_data:
                 if isinstance(item, list):
@@ -37,17 +43,8 @@ async def unir_videos(payload: VideoRequest):
         elif isinstance(raw_data, str):
             urls_limpias.append(raw_data)
 
-        # Validación estricta: Si la lista está vacía, lanzamos el 400 controlado que viste en n8n
         if not urls_limpias:
             raise HTTPException(status_code=400, detail="La lista de URLs está vacía o el formato no es válido.")
-
-        print(f"URLs listas para procesamiento con FFmpeg: {urls_limpias}")
-
-        # AQUÍ INTEGRAS TU LÓGICA DE DESCARGA Y FFmpeg
-        # Ejemplo rápido de estructura para concatenar con FFmpeg:
-        # 1. Descargar los videos a archivos temporales
-        # 2. Crear archivo de texto de lista para ffmpeg (concat demuxer)
-        # 3. Ejecutar subproceso de ffmpeg
 
         return {
             "status": "success",
@@ -59,8 +56,30 @@ async def unir_videos(payload: VideoRequest):
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Excepción capturada: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
+
+@app.post("/generar-voz")
+async def generar_voz(payload: VoiceRequest):
+    try:
+        if not payload.text:
+            raise HTTPException(status_code=400, detail="El texto para la voz está vacío.")
+
+        # Crear archivo temporal para el audio (.mp3)
+        output_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        output_file.close()
+
+        # Generar audio con edge-tts (Gratis y con voces neuronales de alta calidad)
+        communicate = edge_tts.Communicate(payload.text, payload.voice)
+        await communicate.save(output_file.name)
+
+        return FileResponse(
+            output_file.name, 
+            media_type="audio/mpeg", 
+            filename="cancion_generada.mp3"
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al generar la voz: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
