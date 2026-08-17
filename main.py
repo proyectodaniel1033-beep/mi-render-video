@@ -1,65 +1,76 @@
 import os
 import subprocess
 import tempfile
-import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Any
+from typing import List
+import requests
 
 app = FastAPI()
 
 class VideoPayload(BaseModel):
-    urls: Any # Aceptamos cualquier formato para mayor compatibilidad con n8n
+    urls: List[str]
 
 @app.post("/unir-videos")
 def unir_videos(payload: VideoPayload):
-    # Lógica robusta para extraer la lista de URLs
-    data = payload.urls
-    lista_urls = []
-    
-    if isinstance(data, list):
-        lista_urls = data
-    elif isinstance(data, dict):
-        # Si n8n envía un objeto, buscamos valores que parezcan URLs
-        lista_urls = [v for v in data.values() if isinstance(v, str) and v.startswith("http")]
-    
-    if not lista_urls:
-        raise HTTPException(status_code=400, detail="No se encontraron URLs válidas en el cuerpo de la petición.")
+    try:
+        if not payload.urls:
+            raise HTTPException(status_code=400, detail="La lista de URLs está vacía.")
+        
+        # Creamos un directorio temporal para trabajar limpios en Render
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            lista_txt_path = os.path.join(tmpdirname, "lista.txt")
+            video_paths = []
 
-    with tempfile.TemporaryDirectory() as tmpdirname:
-        lista_txt_path = os.path.join(tmpdirname, "lista.txt")
-        video_paths = []
-
-        try:
-            # Descarga
-            for idx, url in enumerate(lista_urls):
-                resp = requests.get(url, stream=True, timeout=15)
-                if resp.status_code == 200:
-                    v_path = os.path.join(tmpdirname, f"v_{idx}.mp4")
-                    with open(v_path, "wb") as f:
-                        for chunk in resp.iter_content(chunk_size=1024*1024):
+            # 1. Descargar cada video de la lista
+            for idx, url in enumerate(payload.urls):
+                response = requests.get(url, stream=True, timeout=15)
+                if response.status_code == 200:
+                    video_path = os.path.join(tmpdirname, f"video_{idx}.mp4")
+                    with open(video_path, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
-                    video_paths.append(v_path)
+                    video_paths.append(video_path)
+                else:
+                    print(f"Error descargando URL {url}, código: {response.status_code}")
 
-            # Preparación para FFmpeg
+            if not video_paths:
+                raise HTTPException(status_code=400, detail="No se pudo descargar ningún video de las URLs proporcionadas.")
+
+            # 2. Crear el archivo de texto para FFmpeg
             with open(lista_txt_path, "w") as f:
                 for path in video_paths:
-                    f.write(f"file '{path}'\n")
+                    f.write(f"file '{os.path.abspath(path)}'\n")
 
-            salida = os.path.join(tmpdirname, "final.mp4")
-            
-            # FFmpeg: Unir y convertir
-            cmd = [
-                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", lista_txt_path,
+            output_video_path = os.path.join(tmpdirname, "salida_final.mp4")
+
+            # 3. Comando de FFmpeg
+            comando = [
+                "ffmpeg",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", lista_txt_path,
+                "-t", "120", 
                 "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
-                "-c:v", "libx264", "-crf", "23", "-preset", "ultrafast", "-c:a", "aac", salida
+                "-c:v", "libx264",
+                "-crf", "23",
+                "-preset", "fast",
+                "-c:a", "aac",
+                output_video_path
             ]
+
+            resultado = subprocess.run(comando, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             
-            subprocess.run(cmd, check=True, capture_output=True)
+            if resultado.returncode != 0:
+                print(f"Error interno de FFmpeg: {resultado.stderr}")
+                raise HTTPException(status_code=500, detail=f"Error en FFmpeg: {resultado.stderr}")
 
-            return {"status": "success", "message": "Video procesado correctamente"}
+            return {
+                "status": "success",
+                "message": "¡Videos unidos correctamente!",
+                "total_videos_procesados": len(video_paths)
+            }
 
-        except subprocess.CalledProcessError as e:
-            raise HTTPException(status_code=500, detail=f"Error en FFmpeg: {e.stderr.decode()}")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        print(f"Excepción capturada: str(e)")
+        raise HTTPException(status_code=500, detail=str(e))
