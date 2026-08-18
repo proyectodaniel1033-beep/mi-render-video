@@ -111,15 +111,25 @@ async def render_final(video_url: str = Form(...), audio: UploadFile = File(...)
 
             # 3. Ejecutar FFmpeg para unir video y audio
             cmd = [
-                "ffmpeg", "-y",
-                "-i", video_path,
-                "-i", audio_path,
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-shortest",
-                output_path
-            ]
+             "ffmpeg",
+             "-y",
+             "-i",
+             video_path,
+             "-i",
+             audio_path,
+             "-map",
+             "0:v:0",  # Toma estrictamente el video del primer archivo (video)
+             "-map",
+             "1:a:0",  # Toma estrictamente el audio del segundo archivo (audio)
+             "-c:v",
+             "copy",
+             "-c:a",
+             "aac",
+             "-b:a",
+             "192k",
+             "-shortest",
+             output_path,
+             ]
 
             result = subprocess.run(cmd, capture_output=True, text=True)
             
