@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 import subprocess
 import requests
 import os
@@ -7,6 +8,10 @@ app = FastAPI()
 
 @app.post("/unir-videos")
 async def unir_videos(request: Request):
+    v_path = "input_video.mp4"
+    a_path = "input_audio.mp3"
+    o_path = "output_final.mp4"
+    
     try:
         body = await request.json()
         video_url = body.get("video_url")
@@ -14,10 +19,6 @@ async def unir_videos(request: Request):
 
         if not video_url or not audio_url:
             raise HTTPException(status_code=422, detail="Faltan datos de video o audio")
-
-        v_path = "input_video.mp4"
-        a_path = "input_audio.mp3"
-        o_path = "output_final.mp4"
 
         with open(v_path, "wb") as f:
             f.write(requests.get(video_url).content)
@@ -30,7 +31,7 @@ async def unir_videos(request: Request):
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=result.stderr)
 
-        return {"status": "success", "message": "Video unido correctamente"}
+        return FileResponse(o_path, media_type="video/mp4", filename="video_final.mp4")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
