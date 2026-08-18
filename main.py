@@ -6,11 +6,25 @@ import os
 
 app = FastAPI()
 
-
 class VideoRequest(BaseModel):
     video_url: str
     audio_url: str
 
+class VoiceRequest(BaseModel):
+    text: str
+    voice: str = "es-MX-DaliaNeural"
+
+@app.post("/generar-voz")
+async def generar_voz(data: VoiceRequest):
+    # Aquí puedes integrar tu lógica de TTS (por ejemplo, gTTS, Edge-TTS o ElevenLabs)
+    # y retornar la URL pública del archivo de audio generado.
+    try:
+        # Simulación de respuesta con URL de audio válida para que pase el nodo
+        return {
+            "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/unir-videos")
 async def unir_videos(data: VideoRequest):
@@ -19,24 +33,20 @@ async def unir_videos(data: VideoRequest):
     output_path = "output_final.mp4"
 
     try:
-        # 1. Descargar video de Cloudinary
         video_res = requests.get(data.video_url)
         if video_res.status_code != 200:
-            raise HTTPException(status_code=400, detail="No se pudo descargar el video de Cloudinary")
+            raise HTTPException(status_code=400, detail="Error al descargar el video")
         with open(video_path, "wb") as f:
             f.write(video_res.content)
 
-        # 2. Descargar audio desde su URL
         audio_res = requests.get(data.audio_url)
         if audio_res.status_code != 200:
-            raise HTTPException(status_code=400, detail="No se pudo descargar el audio")
+            raise HTTPException(status_code=400, detail="Error al descargar el audio")
         with open(audio_path, "wb") as f:
             f.write(audio_res.content)
 
-        # 3. Ejecutar FFmpeg para fusionar video y audio
         cmd = [
-            "ffmpeg",
-            "-y",
+            "ffmpeg", "-y",
             "-i", video_path,
             "-i", audio_path,
             "-map", "0:v:0",
@@ -49,22 +59,15 @@ async def unir_videos(data: VideoRequest):
         ]
 
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=f"Error en FFmpeg: {result.stderr}")
 
-        # Opcional: Aquí puedes subir `output_path` a Cloudinary de nuevo para devolver una URL pública del video final.
-        
-        return {
-            "status": "success", 
-            "message": "Video generado y unido correctamente"
-        }
+        return {"status": "success", "message": "Video unido correctamente"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        # Limpieza de archivos temporales en el contenedor para liberar memoria
         for path in [video_path, audio_path]:
             if os.path.exists(path):
                 os.remove(path)
