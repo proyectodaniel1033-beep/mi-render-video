@@ -17,47 +17,34 @@ class VoiceRequest(BaseModel):
     voice: str = "es-MX-DaliaNeural"
 
 @app.post("/unir-videos")
-async def unir_videos(payload: VideoRequest):
+async def unir_videos(request: Request):
     try:
-        raw_data = payload.urls
-        urls_limpias = []
+        body = await request.json()
+        video_url = body.get("video_url")
+        audio_url = body.get("audio_url")
 
-        if isinstance(raw_data, list):
-            for item in raw_data:
-                if isinstance(item, list):
-                    urls_limpias.extend([str(i) for i in item if i])
-                elif isinstance(item, dict):
-                    for val in item.values():
-                        if isinstance(val, list):
-                            urls_limpias.extend([str(i) for i in val if i])
-                        elif val:
-                            urls_limpias.append(str(val))
-                elif item:
-                    urls_limpias.append(str(item))
-        elif isinstance(raw_data, dict):
-            for val in raw_data.values():
-                if isinstance(val, list):
-                    urls_limpias.extend([str(i) for i in val if i])
-                elif val:
-                    urls_limpias.append(str(val))
-        elif isinstance(raw_data, str):
-            urls_limpias.append(raw_data)
+        if not video_url or not audio_url:
+            raise HTTPException(status_code=422, detail="Faltan datos de video o audio")
 
-        if not urls_limpias:
-            raise HTTPException(status_code=400, detail="La lista de URLs está vacía o el formato no es válido.")
+        v_path = "input_video.mp4"
+        a_path = "input_audio.mp3"
+        o_path = "output_final.mp4"
 
-        return {
-            "status": "success",
-            "message": "Videos procesados correctamente",
-            "total_urls": len(urls_limpias),
-            "urls": urls_limpias
-        }
+        with open(v_path, "wb") as f:
+            f.write(requests.get(video_url).content)
+        with open(a_path, "wb") as f:
+            f.write(requests.get(audio_url).content)
 
-    except HTTPException as he:
-        raise he
+        cmd = ["ffmpeg", "-y", "-i", v_path, "-i", a_path, "-c:v", "copy", "-c:a", "aac", "-shortest", o_path]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=result.stderr)
+
+        return {"status": "success", "message": "Video unido correctamente"}
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=str(e))
 @app.post("/generar-voz")
 async def generar_voz(payload: VoiceRequest):
     try:
