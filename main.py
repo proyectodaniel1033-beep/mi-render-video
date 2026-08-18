@@ -1,76 +1,123 @@
 import os
 import subprocess
 import tempfile
-import requests
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from typing import List, Union, Any
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import edge_tts
 
-app = FastAPI(title="Video Renderer Elite API", version="1.3.1")
+app = FastAPI(title="Video y Voz Renderer Microservice", version="1.2.0")
 
-# --- Modelos ---
+class VideoRequest(BaseModel):
+    urls: Union[List[Any], dict, str, None] = None
+
 class VoiceRequest(BaseModel):
     text: str
     voice: str = "es-MX-DaliaNeural"
 
-# --- Endpoints ---
+@app.post("/unir-videos")
+async def unir_videos(payload: VideoRequest):
+    try:
+        raw_data = payload.urls
+        urls_limpias = []
 
-@app.post("/render-final")
-async def render_final(video_url: str = Form(...), audio: UploadFile = File(...)):
-    """
-    Procesa video desde URL y audio desde binario. 
-    Uso de contextos para limpieza automática de archivos.
-    """
-    # Usamos TemporaryDirectory para asegurar que todo se borre al terminar la petición
-    with tempfile.TemporaryDirectory() as temp_dir:
-        video_path = os.path.join(temp_dir, "input_video.mp4")
-        audio_path = os.path.join(temp_dir, "input_audio.mp3")
-        output_path = os.path.join(temp_dir, "output.mp4")
+        if isinstance(raw_data, list):
+            for item in raw_data:
+                if isinstance(item, list):
+                    urls_limpias.extend([str(i) for i in item if i])
+                elif isinstance(item, dict):
+                    for val in item.values():
+                        if isinstance(val, list):
+                            urls_limpias.extend([str(i) for i in val if i])
+                        elif val:
+                            urls_limpias.append(str(val))
+                elif item:
+                    urls_limpias.append(str(item))
+        elif isinstance(raw_data, dict):
+            for val in raw_data.values():
+                if isinstance(val, list):
+                    urls_limpias.extend([str(i) for i in val if i])
+                elif val:
+                    urls_limpias.append(str(val))
+        elif isinstance(raw_data, str):
+            urls_limpias.append(raw_data)
 
-        try:
-            # 1. Descarga eficiente
-            response = requests.get(video_url, stream=True, timeout=30)
-            if response.status_code != 200:
-                raise HTTPException(status_code=400, detail="Error al descargar el video fuente.")
-            
-            with open(video_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+        if not urls_limpias:
+            raise HTTPException(status_code=400, detail="La lista de URLs está vacía o el formato no es válido.")
 
-            # 2. Guardado de audio binario
-            with open(audio_path, 'wb') as f:
-                f.write(await audio.read())
+        return {
+            "status": "success",
+            "message": "Videos procesados correctamente",
+            "total_urls": len(urls_limpias),
+            "urls": urls_limpias
+        }
 
-            # 3. Procesamiento FFmpeg (Hardened)
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", video_path,
-                "-i", audio_path,
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-shortest",
-                output_path
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                raise HTTPException(status_code=500, detail=f"FFmpeg Error: {result.stderr}")
-
-            # Devolvemos el archivo directamente
-            return FileResponse(output_path, media_type="video/mp4", filename="final_render.mp4")
-
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Fallo en el pipeline: {str(e)}")
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @app.post("/generar-voz")
 async def generar_voz(payload: VoiceRequest):
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     try:
+        if not payload.text:
+            raise HTTPException(status_code=400, detail="El texto para la voz está vacío.")
+
+        output_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        output_file.close()
+
         communicate = edge_tts.Communicate(payload.text, payload.voice)
-        await communicate.save(tmp.name)
-        return FileResponse(tmp.name, media_type="audio/mpeg", filename="audio.mp3")
+        await communicate.save(output_file.name)
+
+        return FileResponse(
+            output_file.name, 
+            media_type="audio/mpeg", 
+            filename="cancion_generada.mp3"
+        )
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error al generar la voz: {str(e)}")
+
+@app.post("/render-final")
+async def render_final(video: UploadFile = File(...), audio: UploadFile = File(...)):
+    try:
+        video_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        
+        video_path.write(await video.read())
+        video_path.close()
+        
+        audio_path.write(await audio.read())
+        audio_path.close()
+        output_path.close()
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path.name,
+            "-i", audio_path.name,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-shortest",
+            output_path.name
+        ]
+
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Error en FFmpeg: {result.stderr.decode('utf-8')}")
+
+        return FileResponse(
+            output_path.name,
+            media_type="video/mp4",
+            filename="video_final_con_audio.mp4"
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error interno en render final: {str(e)}")
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
