@@ -6,10 +6,6 @@ import os
 
 app = FastAPI()
 
-class VideoRequest(BaseModel):
-    video_url: str
-    audio_url: str
-
 class VoiceRequest(BaseModel):
     text: str
     voice: str = "es-MX-DaliaNeural"
@@ -17,7 +13,6 @@ class VoiceRequest(BaseModel):
 @app.post("/generar-voz")
 async def generar_voz(data: VoiceRequest):
     try:
-        # Endpoint simulado o integrado para la voz que devuelve una URL de audio válida
         return {
             "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
         }
@@ -26,36 +21,43 @@ async def generar_voz(data: VoiceRequest):
 
 @app.post("/unir-videos")
 async def unir_videos(request: Request):
-    # Capturamos la petición en bruto para depurar si fuera necesario
     try:
         body = await request.json()
         print(f"DATOS RECIBIDOS EN RENDER: {body}")
         
-        video_url = body.get("video_url")
+        # Extraer video_url soportando si viene directo o anidado en 'urls'
+        video_url = None
+        if "video_url" in body:
+            video_url = body.get("video_url")
+        elif "urls" in body:
+            urls_data = body.get("urls")
+            if isinstance(urls_data, dict) and "urls" in urls_data:
+                video_url = urls_data["urls"][0] if urls_data["urls"] else None
+            elif isinstance(urls_data, list):
+                video_url = urls_data[0] if urls_data else None
+
+        # Extraer audio_url
         audio_url = body.get("audio_url")
 
         if not video_url or not audio_url:
-            raise HTTPException(status_code=422, detail="Faltan las URL de video o audio")
+            raise HTTPException(status_code=422, detail=f"Faltan las URL. Recibido video: {video_url}, audio: {audio_url}")
 
         video_path = "temp_video.mp4"
         audio_path = "temp_audio.mp3"
         output_path = "output_final.mp4"
 
-        # Descargar video
         video_res = requests.get(video_url)
         if video_res.status_code != 200:
             raise HTTPException(status_code=400, detail="Error al descargar el video fuente")
         with open(video_path, "wb") as f:
             f.write(video_res.content)
 
-        # Descargar audio
         audio_res = requests.get(audio_url)
         if audio_res.status_code != 200:
             raise HTTPException(status_code=400, detail="Error al descargar el audio fuente")
         with open(audio_path, "wb") as f:
             f.write(audio_res.content)
 
-        # Comando FFmpeg para fusionar
         cmd = [
             "ffmpeg", "-y",
             "-i", video_path,
@@ -80,7 +82,6 @@ async def unir_videos(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        # Limpieza de archivos temporales
         for path in ["temp_video.mp4", "temp_audio.mp3", "output_final.mp4"]:
             if os.path.exists(path):
                 try:
