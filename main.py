@@ -53,20 +53,22 @@ async def unir_videos(payload: VideoRequest):
         output_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
         output_video.close()
 
-        # 1. Descargar cada video temporalmente
+        # 1. Descargar cada video temporalmente con cabeceras para evitar bloqueos
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'} 
         for url in urls_limpias:
             try:
-                response = requests.get(url, timeout=15)
+                # Limpiamos posibles comillas extra que pueden venir en el string de n8n
+                clean_url = url.strip('"').strip("'")
+                response = requests.get(clean_url, headers=headers, timeout=30)
                 if response.status_code == 200:
                     t_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
                     t_file.write(response.content)
                     t_file.close()
                     temp_files.append(t_file.name)
+                else:
+                    print(f"Error {response.status_code} al descargar: {clean_url}")
             except Exception as e:
-                print(f"No se pudo descargar el video {url}: {e}")
-
-        if not temp_files:
-            raise HTTPException(status_code=500, detail="No se pudo descargar ninguno de los videos de las URLs.")
+                print(f"Error descargando {url}: {e}")
 
         # 2. Crear el archivo de texto para la concatenación segura de FFmpeg
         for f_path in temp_files:
