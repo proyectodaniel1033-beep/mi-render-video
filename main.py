@@ -76,19 +76,32 @@ async def unir_videos(payload: VideoRequest):
             list_file_path.write(f"file '{safe_path}'\n")
         list_file_path.close()
 
-        # 3. Ejecutar FFmpeg para concatenar todos los clips en orden secuencial
-        cmd = [
-            "ffmpeg", "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", list_file_path.name,
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-c:a", "aac",
-            output_video.name
-        ]
+        # 3. Ejecutar FFmpeg: Normalizar y luego concatenar
+        # Primero re-codificamos cada clip a un formato idéntico (720p, 30fps)
+        normalized_files = []
+        for i, f_path in enumerate(temp_files):
+            norm_path = f"norm_{i}.mp4"
+            cmd_norm = [
+                "ffmpeg", "-y", "-i", f_path,
+                "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+                "-r", "30", "-c:v", "libx264", "-crf", "23", "-c:a", "aac", norm_path
+            ]
+            subprocess.run(cmd_norm, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            normalized_files.append(norm_path)
 
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Ahora creamos el archivo de lista con los normalizados
+        list_file_path = tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".txt")
+        for f_path in normalized_files:
+            list_file_path.write(f"file '{os.path.abspath(f_path)}'\n")
+        list_file_path.close()
+
+        # Concatenar
+        cmd_concat = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", list_file_path.name,
+            "-c", "copy", output_video.name
+        ]
+        subprocess.run(cmd_concat, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         # Limpiar archivos temporales individuales
         for f_path in temp_files:
