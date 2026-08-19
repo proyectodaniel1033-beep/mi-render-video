@@ -8,7 +8,7 @@ from pydantic import BaseModel
 import requests
 import edge_tts
 
-app = FastAPI(title="Video y Voz Renderer Microservice", version="1.2.0")
+app = FastAPI(title="Video y Voz Renderer Microservice", version="1.2.1")
 
 class VideoRequest(BaseModel):
     urls: Union[List[Any], dict, str, None] = None
@@ -49,15 +49,11 @@ async def unir_videos(payload: VideoRequest):
 
         # --- PROCESO DE DESCARGA Y CONCATENACIÓN CON FFMPEG ---
         temp_files = []
-        list_file_path = tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".txt")
-        output_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-        output_video.close()
-
-        # 1. Descargar cada video temporalmente con cabeceras para evitar bloqueos
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'} 
+        
+        # 1. Descargar cada video temporalmente
         for url in urls_limpias:
             try:
-                # Limpiamos posibles comillas extra que pueden venir en el string de n8n
                 clean_url = url.strip('"').strip("'")
                 response = requests.get(clean_url, headers=headers, timeout=30)
                 if response.status_code == 200:
@@ -70,41 +66,43 @@ async def unir_videos(payload: VideoRequest):
             except Exception as e:
                 print(f"Error descargando {url}: {e}")
 
-        # 2. Crear el archivo de texto para la concatenación segura de FFmpeg
-        for f_path in temp_files:
+        if not temp_files:
+            raise HTTPException(status_code=500, detail="No se pudo descargar ninguno de los videos de las URLs.")
+
+        # 2. Normalizar cada clip a 720p y 30fps para evitar fallos de formato en la unión
+        normalized_files = []
+        for i, f_path in enumerate(temp_files):
+            norm_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+            norm_path.close()
+            cmd_norm = [
+                "ffmpeg", "-y", "-i", f_path,
+                "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+                "-r", "30", "-c:v", "libx264", "-crf", "23", "-c:a", "aac", norm_path.name
+            ]
+            subprocess.run(cmd_norm, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            normalized_files.append(norm_path.name)
+
+        # 3. Crear el archivo de texto para la concatenación segura de FFmpeg
+        list_file_path = tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".txt")
+        for f_path in normalized_files:
             safe_path = f_path.replace("\\", "/")
             list_file_path.write(f"file '{safe_path}'\n")
         list_file_path.close()
 
-        # 3. Ejecutar FFmpeg: Normalizar y luego concatenar
-        # Primero re-codificamos cada clip a un formato idéntico (720p, 30fps)
-        normalized_files = []
-        for i, f_path in enumerate(temp_files):
-            norm_path = f"norm_{i}.mp4"
-            cmd_norm = [
-                "ffmpeg", "-y", "-i", f_path,
-                "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
-                "-r", "30", "-c:v", "libx264", "-crf", "23", "-c:a", "aac", norm_path
-            ]
-            subprocess.run(cmd_norm, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            normalized_files.append(norm_path)
+        output_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        output_video.close()
 
-        # Ahora creamos el archivo de lista con los normalizados
-        list_file_path = tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".txt")
-        for f_path in normalized_files:
-            list_file_path.write(f"file '{os.path.abspath(f_path)}'\n")
-        list_file_path.close()
-
-        # Concatenar
+        # 4. Ejecutar FFmpeg para concatenar todos los clips normalizados
         cmd_concat = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", list_file_path.name,
             "-c", "copy", output_video.name
         ]
-        subprocess.run(cmd_concat, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        result = subprocess.run(cmd_concat, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # Limpiar archivos temporales individuales
-        for f_path in temp_files:
+        # Limpiar archivos temporales individuales y normalizados
+        for f_path in temp_files + normalized_files:
             try:
                 os.unlink(f_path)
             except:
@@ -117,7 +115,7 @@ async def unir_videos(payload: VideoRequest):
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=f"Error en FFmpeg al unir videos: {result.stderr.decode('utf-8')}")
 
-        # 4. Retornar el archivo MP4 unificado listo para el nodo de descarga en n8n
+        # 5. Retornar el archivo MP4 unificado
         return FileResponse(
             output_video.name,
             media_type="video/mp4",
