@@ -5,6 +5,7 @@ from typing import List, Union, Any
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import requests
 import edge_tts
 
 app = FastAPI(title="Video y Voz Renderer Microservice", version="1.2.0")
@@ -46,12 +47,67 @@ async def unir_videos(payload: VideoRequest):
         if not urls_limpias:
             raise HTTPException(status_code=400, detail="La lista de URLs está vacía o el formato no es válido.")
 
-        return {
-            "status": "success",
-            "message": "Videos procesados correctamente",
-            "total_urls": len(urls_limpias),
-            "urls": urls_limpias
-        }
+        # --- PROCESO DE DESCARGA Y CONCATENACIÓN CON FFMPEG ---
+        temp_files = []
+        list_file_path = tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".txt")
+        output_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        output_video.close()
+
+        # 1. Descargar cada video temporalmente
+        for url in urls_limpias:
+            try:
+                response = requests.get(url, timeout=15)
+                if response.status_code == 200:
+                    t_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    t_file.write(response.content)
+                    t_file.close()
+                    temp_files.append(t_file.name)
+            except Exception as e:
+                print(f"No se pudo descargar el video {url}: {e}")
+
+        if not temp_files:
+            raise HTTPException(status_code=500, detail="No se pudo descargar ninguno de los videos de las URLs.")
+
+        # 2. Crear el archivo de texto para la concatenación segura de FFmpeg
+        for f_path in temp_files:
+            safe_path = f_path.replace("\\", "/")
+            list_file_path.write(f"file '{safe_path}'\n")
+        list_file_path.close()
+
+        # 3. Ejecutar FFmpeg para concatenar todos los clips en orden secuencial
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", list_file_path.name,
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-c:a", "aac",
+            output_video.name
+        ]
+
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # Limpiar archivos temporales individuales
+        for f_path in temp_files:
+            try:
+                os.unlink(f_path)
+            except:
+                pass
+        try:
+            os.unlink(list_file_path.name)
+        except:
+            pass
+
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Error en FFmpeg al unir videos: {result.stderr.decode('utf-8')}")
+
+        # 4. Retornar el archivo MP4 unificado listo para el nodo de descarga en n8n
+        return FileResponse(
+            output_video.name,
+            media_type="video/mp4",
+            filename="secuencia_videos_unida.mp4"
+        )
 
     except HTTPException as he:
         raise he
