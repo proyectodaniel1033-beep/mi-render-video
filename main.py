@@ -7,8 +7,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import requests
 import edge_tts
+import json
 
-app = FastAPI(title="Video y Voz Renderer Microservice", version="1.2.1")
+app = FastAPI(title="Video y Voz Renderer Microservice", version="1.3.1")
 
 class VideoRequest(BaseModel):
     urls: Union[List[Any], dict, str, None] = None
@@ -19,19 +20,21 @@ class VoiceRequest(BaseModel):
 
 @app.post("/unir-videos")
 async def unir_videos(payload: VideoRequest):
+    temp_files = []
+    normalized_files = []
+    list_file_path = None
+    output_video = None
+    
     try:
         raw_data = payload.urls
         urls_limpias = []
 
-        # Si n8n mandó un string JSON escapado por error, intentamos limpiarlo
         if isinstance(raw_data, str):
-            import json
             try:
                 raw_data = json.loads(raw_data)
             except:
                 pass
 
-        # Aplanar cualquier estructura que llegue
         def extraer_urls(obj):
             if isinstance(obj, str):
                 cleaned = obj.strip('"').strip("'").replace('\\"', '"')
@@ -47,44 +50,43 @@ async def unir_videos(payload: VideoRequest):
         extraer_urls(raw_data)
 
         if not urls_limpias:
-            raise HTTPException(status_code=400, detail=f"No se pudieron extraer URLs válidas de: {raw_data}")
+            raise HTTPException(status_code=400, detail="No se pudieron extraer URLs válidas.")
 
-        # --- PROCESO DE DESCARGA Y CONCATENACIÓN CON FFMPEG ---
-        temp_files = []
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'} 
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'} 
         
-        # 1. Descargar cada video temporalmente
-        for url in urls_limpias:
+        # 1. Descargar y normalizar de uno en uno para ahorrar RAM en Render
+        for i, url in enumerate(urls_limpias):
             try:
                 clean_url = url.strip('"').strip("'")
-                response = requests.get(clean_url, headers=headers, timeout=30)
+                response = requests.get(clean_url, headers=headers, timeout=15)
                 if response.status_code == 200:
                     t_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
                     t_file.write(response.content)
                     t_file.close()
                     temp_files.append(t_file.name)
-                else:
-                    print(f"Error {response.status_code} al descargar: {clean_url}")
+
+                    # Normalizamos inmediatamente para liberar el video pesado original
+                    norm_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    norm_path.close()
+                    
+                    # Bajamos a 640x360 para evitar que Render se quede sin memoria (Error 502)
+                    cmd_norm = [
+                        "ffmpeg", "-y", "-i", t_file.name,
+                        "-vf", "scale=640:360:force_original_aspect_ratio=increase,crop=640:360",
+                        "-r", "30", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-an", norm_path.name
+                    ]
+                    subprocess.run(cmd_norm, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    normalized_files.append(norm_path.name)
+                    
+                    # Borramos el temporal pesado original de inmediato
+                    os.unlink(t_file.name)
             except Exception as e:
-                print(f"Error descargando {url}: {e}")
+                print(f"Error procesando video {i}: {e}")
 
-        if not temp_files:
-            raise HTTPException(status_code=500, detail="No se pudo descargar ninguno de los videos de las URLs.")
+        if not normalized_files:
+            raise HTTPException(status_code=500, detail="No se pudo procesar ningún video.")
 
-        # 2. Normalizar cada clip a 720p y 30fps para evitar fallos de formato en la unión
-        normalized_files = []
-        for i, f_path in enumerate(temp_files):
-            norm_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-            norm_path.close()
-            cmd_norm = [
-                "ffmpeg", "-y", "-i", f_path,
-                "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
-                "-r", "30", "-c:v", "libx264", "-crf", "23", "-c:a", "aac", norm_path.name
-            ]
-            subprocess.run(cmd_norm, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            normalized_files.append(norm_path.name)
-
-        # 3. Crear el archivo de texto para la concatenación segura de FFmpeg
+        # 2. Crear archivo de lista para FFmpeg
         list_file_path = tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".txt")
         for f_path in normalized_files:
             safe_path = f_path.replace("\\", "/")
@@ -94,7 +96,7 @@ async def unir_videos(payload: VideoRequest):
         output_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
         output_video.close()
 
-        # 4. Ejecutar FFmpeg para concatenar todos los clips normalizados
+        # 3. Concatenar los clips ya normalizados
         cmd_concat = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", list_file_path.name,
@@ -103,21 +105,9 @@ async def unir_videos(payload: VideoRequest):
         
         result = subprocess.run(cmd_concat, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # Limpiar archivos temporales individuales y normalizados
-        for f_path in temp_files + normalized_files:
-            try:
-                os.unlink(f_path)
-            except:
-                pass
-        try:
-            os.unlink(list_file_path.name)
-        except:
-            pass
-
         if result.returncode != 0:
-            raise HTTPException(status_code=500, detail=f"Error en FFmpeg al unir videos: {result.stderr.decode('utf-8')}")
+            raise HTTPException(status_code=500, detail=f"Error en FFmpeg concat: {result.stderr.decode('utf-8')}")
 
-        # 5. Retornar el archivo MP4 unificado
         return FileResponse(
             output_video.name,
             media_type="video/mp4",
@@ -128,6 +118,15 @@ async def unir_videos(payload: VideoRequest):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
+    finally:
+        # Limpieza de seguridad de archivos temporales sobrantes
+        for f in temp_files + normalized_files:
+            try:
+                if os.path.exists(f): os.unlink(f)
+            except: pass
+        if list_file_path and os.path.exists(list_file_path.name):
+            try: os.unlink(list_file_path.name)
+            except: pass
 
 @app.post("/generar-voz")
 async def generar_voz(payload: VoiceRequest):
@@ -146,7 +145,6 @@ async def generar_voz(payload: VoiceRequest):
             media_type="audio/mpeg", 
             filename="cancion_generada.mp3"
         )
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al generar la voz: {str(e)}")
 
@@ -178,14 +176,13 @@ async def render_final(video: UploadFile = File(...), audio: UploadFile = File(.
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         if result.returncode != 0:
-            raise HTTPException(status_code=500, detail=f"Error en FFmpeg: {result.stderr.decode('utf-8')}")
+            raise HTTPException(status_code=500, detail=f"Error en FFmpeg render final: {result.stderr.decode('utf-8')}")
 
         return FileResponse(
             output_path.name,
             media_type="video/mp4",
             filename="video_final_con_audio.mp4"
         )
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error interno en render final: {str(e)}")
 
