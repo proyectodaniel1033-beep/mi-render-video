@@ -2,7 +2,7 @@ import os
 import subprocess
 import tempfile
 import re
-from typing import List
+from typing import List, Union
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -16,17 +16,22 @@ class VoiceRequest(BaseModel):
     voice: str = "es-MX-DaliaNeural"
 
 @app.post("/unir-binarios")
-async def unir_binarios(files: List[UploadFile] = File(...)):
+async def unir_binarios(files: Union[UploadFile, List[UploadFile]] = File(...)):
     temp_dir = tempfile.mkdtemp()
     list_file_path = os.path.join(temp_dir, "list.txt")
     output_video = os.path.join(temp_dir, "final.mp4")
+    
+    # Asegurarnos de que siempre sea una lista, sin importar cómo lo mande n8n
+    if not isinstance(files, list):
+        files = [files]
     
     try:
         with open(list_file_path, "w") as f:
             for i, file in enumerate(files):
                 file_path = os.path.join(temp_dir, f"{i}.mp4")
+                content = await file.read()
                 with open(file_path, "wb") as buffer:
-                    buffer.write(await file.read())
+                    buffer.write(content)
                 
                 # Normalizar a 720p para asegurar compatibilidad
                 norm_path = os.path.join(temp_dir, f"norm_{i}.mp4")
