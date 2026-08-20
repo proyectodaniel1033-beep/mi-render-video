@@ -23,29 +23,31 @@ async def unir_videos(payload: VideoRequest):
         raw_data = payload.urls
         urls_limpias = []
 
-        if isinstance(raw_data, list):
-            for item in raw_data:
-                if isinstance(item, list):
-                    urls_limpias.extend([str(i) for i in item if i])
-                elif isinstance(item, dict):
-                    for val in item.values():
-                        if isinstance(val, list):
-                            urls_limpias.extend([str(i) for i in val if i])
-                        elif val:
-                            urls_limpias.append(str(val))
-                elif item:
-                    urls_limpias.append(str(item))
-        elif isinstance(raw_data, dict):
-            for val in raw_data.values():
-                if isinstance(val, list):
-                    urls_limpias.extend([str(i) for i in val if i])
-                elif val:
-                    urls_limpias.append(str(val))
-        elif isinstance(raw_data, str):
-            urls_limpias.append(raw_data)
+        # Si n8n mandó un string JSON escapado por error, intentamos limpiarlo
+        if isinstance(raw_data, str):
+            import json
+            try:
+                raw_data = json.loads(raw_data)
+            except:
+                pass
+
+        # Aplanar cualquier estructura que llegue
+        def extraer_urls(obj):
+            if isinstance(obj, str):
+                cleaned = obj.strip('"').strip("'").replace('\\"', '"')
+                if cleaned.startswith("http"):
+                    urls_limpias.append(cleaned)
+            elif isinstance(obj, list):
+                for item in obj:
+                    extraer_urls(item)
+            elif isinstance(obj, dict):
+                for val in obj.values():
+                    extraer_urls(val)
+
+        extraer_urls(raw_data)
 
         if not urls_limpias:
-            raise HTTPException(status_code=400, detail="La lista de URLs está vacía o el formato no es válido.")
+            raise HTTPException(status_code=400, detail=f"No se pudieron extraer URLs válidas de: {raw_data}")
 
         # --- PROCESO DE DESCARGA Y CONCATENACIÓN CON FFMPEG ---
         temp_files = []
