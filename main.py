@@ -76,14 +76,14 @@ async def finalizar_render(session_id: str = Form(...)):
             for file_path in files:
                 f.write(f"file '{os.path.abspath(file_path)}'\n")
 
-        # COMANDO CORREGIDO: Normaliza resolución, framerate y añade faststart para YouTube
+        # COMANDO ULTRA RÁPIDO: Usa preset ultrafast para evitar el error 502 en Render
         cmd_concat = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", list_file_path,
             "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,setsar=1",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-            "-c:a", "aac", "-b:a", "192k",
-            "-movflags", "+faststart",  # Vital para que YouTube reconozca los metadatos y la duración de inmediato
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
             output_video
         ]
         
