@@ -54,7 +54,7 @@ async def recibir_video(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 3. Concatenación final con FFmpeg y limpieza de archivos temporales
+# 3. Concatenación final con FFmpeg (Normalizado y con Faststart para YouTube)
 @app.post("/finalizar-render")
 async def finalizar_render(session_id: str = Form(...)):
     session_path = os.path.join(BASE_UPLOAD_DIR, session_id)
@@ -76,9 +76,15 @@ async def finalizar_render(session_id: str = Form(...)):
             for file_path in files:
                 f.write(f"file '{os.path.abspath(file_path)}'\n")
 
+        # COMANDO CORREGIDO: Normaliza resolución, framerate y añade faststart para YouTube
         cmd_concat = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-            "-i", list_file_path, "-c", "copy", output_video
+            "-i", list_file_path,
+            "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,setsar=1",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",  # Vital para que YouTube reconozca los metadatos y la duración de inmediato
+            output_video
         ]
         
         result = subprocess.run(cmd_concat, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -91,7 +97,7 @@ async def finalizar_render(session_id: str = Form(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Limpieza posterior de los fragmentos individuales (mantiene el video final para descarga)
+        # Limpieza posterior de los fragmentos individuales
         if os.path.exists(session_path):
             for f in os.listdir(session_path):
                 file_path = os.path.join(session_path, f)
