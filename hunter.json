@@ -1,0 +1,72 @@
+{
+  "nodes": [
+    {
+      "name": "1. Cada día 7AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "parameters": { "rule": { "interval": [{ "field": "hours", "minutesInterval": 0, "triggerAtHour": 7 }] } }
+    },
+    {
+      "name": "2. Tendencias TikTok",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "https://www.tiktok.com/api/product/search/?keyword=mini%20hair%20straightener%20portable",
+        "method": "GET"
+      }
+    },
+    {
+      "name": "3. Productos CJ",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "https://developers.cjdropshipping.com/api2.0/v1/product/list",
+        "method": "GET",
+        "headerParametersUi": { "parameter": [{ "name": "CJ-Access-Token", "value": "TU_TOKEN_GRATIS_CJ" }] }
+      }
+    },
+    {
+      "name": "4. FILTRO GANADOR - Código",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "// Criterios de HERO ganador\nconst products = $input.all[0].json.data || $input.all;\nconst ganadores = [];\nfor (const p of products) {\n const views = p.videoViews || p.sold || 0;\n const precio = parseFloat(p.sellPrice || p.price || 100);\n const peso = parseFloat(p.weight || 0.3);\n // SCORE\n let score = 0;\n if (views > 50000) score += 30;\n if (precio < 20 && precio > 4) score += 30; // margen x3 en México\n if (peso < 0.5) score += 20; // envío barato\n if (p.rating > 4.5) score += 20;\n if (score >= 80) ganadores.push({...p, hunterScore: score});\n}\nreturn ganadores.map(p => ({json: p}));"
+      }
+    },
+    {
+      "name": "5. ¿Es ganador?",
+      "type": "n8n-nodes-base.if",
+      "parameters": { "conditions": { "number": [{ "value1": "={{ $json.hunterScore }}", "operation": "largerEqual", "value2": 80 }] } }
+    },
+    {
+      "name": "6. IA Gratis - Crea Copy",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "method": "POST",
+        "headerParametersUi": { "parameter": [{ "name": "Authorization", "value": "Bearer TU_KEY_GRATIS_OPENROUTER" }] },
+        "bodyParametersUi": { "parameter": [
+          { "name": "model", "value": "meta-llama/llama-3.1-8b-instruct:free" },
+          { "name": "messages", "value": "[{\"role\":\"user\",\"content\":\"Eres experto dropshipping México. Producto: {{$json.name}}. Crea: 1 Título corto en español para Shopify (ej: Cepillo GlowMX...), 2 Descripción de 3 beneficios con emojis, 3 Precio sugerido en MXN con margen x3. Responde en JSON\"}]" }
+        ]}
+      }
+    },
+    {
+      "name": "7. Crear en Shopify",
+      "type": "n8n-nodes-base.shopify",
+      "parameters": {
+        "resource": "product",
+        "operation": "create",
+        "title": "={{ $json.choices[0].message.content.titulo }}",
+        "description": "={{ $json.choices[0].message.content.descripcion }}",
+        "price": "={{ $json.choices[0].message.content.precio }}",
+        "compareAtPrice": "={{ $json.choices[0].message.content.precio * 1.8 }}"
+      },
+      "credentials": { "shopifyApi": "tu_credencial_shopify" }
+    },
+    {
+      "name": "8. Aviso Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "parameters": {
+        "text": "🔥 HERO NUEVO ENCONTRADO Y PUBLICADO: {{$json.title}} - Score: {{$('4. FILTRO GANADOR').item.json.hunterScore}}/100 - Ya está en tu Shopify. Revisa: https://tu-tienda.myshopify.com",
+        "chatId": "TU_ID_TELEGRAM"
+      }
+    }
+  ]
+}
