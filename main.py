@@ -81,12 +81,18 @@ async def finalizar_render(session_id: str = Form(...)):
             for file_path in files:
                 f.write(f"file '{os.path.abspath(file_path)}'\n")
 
-     # COMANDO DE CERO CONSUMO DE RAM (Stream Copy directo pero seguro)
+     # COMANDO OPTIMIZADO: Duración real correcta y sin desbordar la RAM de Render
         cmd_concat = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", list_file_path,
-            "-c", "copy",  # Copia directa sin re-codificar, gasta 0% de RAM y es instantáneo
-            "-movflags", "+faststart",  # Vital para los metadatos de YouTube
+            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=30",
+            "-c:v", "libx264", 
+            "-preset", "ultrafast", 
+            "-crf", "30",  # Un CRF un poco más alto aligera el peso y ahorra memoria a Render
+            "-c:a", "aac", 
+            "-b:a", "96k",
+            "-fps_mode", "cfr",  # Fuerza fotogramas constantes para evitar que la duración se dispare a 31 horas
+            "-movflags", "+faststart",
             output_video
         ]
         
