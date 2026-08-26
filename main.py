@@ -81,14 +81,12 @@ async def finalizar_render(session_id: str = Form(...)):
             for file_path in files:
                 f.write(f"file '{os.path.abspath(file_path)}'\n")
 
-        # COMANDO ULTRA RÁPIDO: Usa preset ultrafast para evitar el error 502 en Render
+     # COMANDO DE CERO CONSUMO DE RAM (Stream Copy directo pero seguro)
         cmd_concat = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", list_file_path,
-            "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,setsar=1",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-            "-c:a", "aac", "-b:a", "128k",
-            "-movflags", "+faststart",
+            "-c", "copy",  # Copia directa sin re-codificar, gasta 0% de RAM y es instantáneo
+            "-movflags", "+faststart",  # Vital para los metadatos de YouTube
             output_video
         ]
         
