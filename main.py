@@ -18,6 +18,11 @@ class VoiceRequest(BaseModel):
     text: str
     voice: str = "es-MX-DaliaNeural"
 
+# Ruta raíz para el despertador de n8n
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "Servidor despierto y listo"}
+    
 # 1. Generador de voz con limpieza de etiquetas de pensamiento del LLM
 @app.post("/generar-voz")
 async def generar_voz(payload: VoiceRequest):
